@@ -1,0 +1,8 @@
+## Interface: 110005
+## Title: |cFFFF0000deathroll_unnamed|r
+## Version: 0.1
+## Notes: Gambling
+## Author: Adyr & Queuebee
+## DefaultState: enabled
+
+deathroll_unnamed.lua
