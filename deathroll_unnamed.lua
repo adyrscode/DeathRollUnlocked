@@ -2,7 +2,8 @@ SLASH_RELOADUI1 = "/rl" -- quick reload
 SlashCmdList.RELOADUI = ReloadUI
 
 -- functions
-local game
+local start_game
+local end_game
 local textbox_send
 
 -- lists of rolls and rollers
@@ -74,21 +75,25 @@ textbox:SetScript("OnEnterPressed", function(self) -- if enter is pressed
 end)
 
 function textbox_send()
-    if textbox:GetText() ~= "" then -- if the textbox does NOT have NOTHING
-        curr_opponent = UnitName("target") -- the targeted player is our opponent
-        local textbox_str = textbox:GetText() -- get the string
-        textbox_roll = tonumber(textbox_str)
-        ChatFrame1EditBox:SetText(string.format("/roll %d", textbox_roll))
-        ChatEdit_SendText(ChatFrame1EditBox) 
-        textbox:SetText("")
-        textbox:ClearFocus()
-        game()
+    if in_game == false and my_turn == true then
+        if textbox:GetText() ~= "" then -- if the textbox does NOT have NOTHING
+            curr_opponent = UnitName("target") -- the targeted player is our opponent
+            local textbox_str = textbox:GetText() -- get the string
+            textbox_roll = tonumber(textbox_str)
+            ChatFrame1EditBox:SetText(string.format("/roll %d", textbox_roll))
+            ChatEdit_SendText(ChatFrame1EditBox) 
+            textbox:SetText("")
+            textbox:ClearFocus()
+            start_game()
+        else
+            textbox:SetFocus()
+            print(string.format("Please enter a number to roll."))
+            return
+        end
     else
-        textbox:SetFocus()
-        print(string.format("Please enter a number to roll."))
-        return
+        textbox:ClearFocus()
+        print("It's not your turn.")
     end
-
 end
 
 -- listening for system messages
@@ -112,8 +117,7 @@ roll_listener:RegisterEvent("CHAT_MSG_SYSTEM")  -- system messages, like rolls
         
         if my_turn == false and chat_roller == UnitName("player") then -- if it's not our turn anymore AND the roll is ours, then our roll is the roll in chat
             if rolled_number == 1 then
-                in_game = false
-                my_turn = true
+                end_game()
                 print("You lost!")
             else    
                 our_roll = rolled_number
@@ -124,8 +128,7 @@ roll_listener:RegisterEvent("CHAT_MSG_SYSTEM")  -- system messages, like rolls
             if curr_opponent == chat_roller and our_roll == rolled_max_number then -- if the roll is our opponenent's and its not a scam
                 if rolled_number == 1 then -- did they roll 1?
                     print(string.format("%s lost!", curr_opponent))
-                    in_game = false
-                    my_turn = true
+                    end_game()
                 else
                     curr_opponent_roll = rolled_number
                     my_turn = true
@@ -142,12 +145,20 @@ roll_listener:RegisterEvent("CHAT_MSG_SYSTEM")  -- system messages, like rolls
         end
     end)
 
-function game() -- function activates if a game starts
+function start_game() -- function should activate if a game starts
     print(string.format("Deathrolling %s!", curr_opponent))
     ChatFrame1EditBox:SetText(string.format("/roll %d", starting_roll))-- sets the text
     ChatEdit_SendText(ChatFrame1EditBox)    -- sends it
     my_turn = false -- it's not our turn anymore; what did we roll?
     in_game = true 
+    button:SetText("Roll!")
+end
+
+function end_game() -- should activate if a game ends (or is cancelled)
+    curr_opponent = nil
+    in_game = false
+    my_turn = true
+    button:SetText("Start Roll!")
 end
 
 -- button functionality
@@ -161,15 +172,15 @@ button:SetScript("OnClick", function(self, button)
         if textbox:GetText() ~= "" then -- but there's a number in the textbox
             print("Please select a player to roll.")
             
-        elseif recent_roll == -1 and textbox:GetText() == "" then -- if there's no recent roll
-            print("[DR+] No rolls detected. Please select a player or wait for a roll.")
         elseif my_turn == false then
             print("It's not your turn.")
+        elseif recent_roll == -1 and textbox:GetText() == "" then -- if there's no recent roll
+            print("[DR+] No rolls detected. Please select a player or wait for a roll.")
         else
             print("U sure bro?")
             starting_roll = recent_roll
             curr_opponent = recent_opponent
-            game()
+            start_game()
         end
 
     elseif UnitIsPlayer("target") and not UnitIsUnit("target", "player") then -- if a player is targeted
@@ -177,12 +188,12 @@ button:SetScript("OnClick", function(self, button)
         if recent_opponent == targetname then -- if the target is the same as the most recent opponent
             starting_roll = recent_roll
             curr_opponent = recent_opponent
-            game()
+            start_game()
+        elseif my_turn == false then
+            print("It's not your turn.")
         else
             textbox_send()        
-    
         end 
-        
     end
 end)
 
@@ -201,14 +212,22 @@ SLASH_DEATHROLL2 = "/deathroll"
 SlashCmdList["DEATHROLL"] = function(msg) -- msg is whatever player types after cmd
     starting_roll = tonumber(msg) -- convert to number
 
-    if not starting_roll then  -- smartly checks if roll value is a number
+    if my_turn == false then
+        print("It's not your turn.")
+
+    elseif not starting_roll then  -- smartly checks if roll value is a number
         print("Please type a valid number to roll.")
         return
 
     elseif UnitIsPlayer("target") and not UnitIsUnit("target", "player") then -- if someone is targeted and it's not yourself then
-        targetname = UnitName("target")
-        curr_opponent = targetname
-        game()
+        if my_turn == false then
+            print("It's not your turn.")
+        else
+            targetname = UnitName("target")
+            curr_opponent = targetname
+            start_game()
+        end
+
     else
         print("Please target a player to roll.")
     end
@@ -218,8 +237,7 @@ SLASH_DEATHROLLCANCEL1 = "/drcancel"
 SlashCmdList["DEATHROLLCANCEL"] = function()
     if in_game then
         print("Deathroll canceled.")
-        in_game = false
-        my_turn = true
+        end_game()
     else
         print("You're not in a deathroll right now.")
     end
