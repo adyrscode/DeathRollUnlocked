@@ -1,0 +1,7 @@
+# Ignore everything by default
+*
+
+# But not these files
+!.gitignore
+!deathroll_unnamed.lua
+!deathroll_unnamed.toc
