@@ -13,6 +13,9 @@ local textbox_roll = 0 -- textbox input roll
 local rolls = {} -- list of all rolls
 local requests = {} -- list of roll requests
 local target_request = false
+local request_accepted = false
+local cancel_confirmation = false
+local cancel_lock = false
 
 local chat_roller = nil
 local curr_opp = nil -- opponent of current game
@@ -31,7 +34,7 @@ local target_name = nil -- name of our target
 local in_game = false -- are we in a game right now
 local my_turn = true -- is it our turn
 local wait_for_my_roll = false
-local cancel_lock = false -- timer which prevents cancel abuse
+local cancel_timer = false -- timer which prevents cancel abuse
 
 -- functions
 local do_roll
@@ -106,7 +109,7 @@ addon_listener:SetScript("OnEvent", function(self, event, prefix, message, chann
         local msg_type, opp_request_roll_str, opp_request_max_roll_str = strsplit(":", message)
         local short_sender = sender:match("^[^-]+") or sender -- take realm name out
 
-        if msg_type == "GameRequest" then -- if the message is to start a game
+        if msg_type == "GameRequest" then -- game reqeust
             local opp_request_max_roll = tonumber(opp_request_max_roll_str)
             local opp_request_roll = tonumber(opp_request_roll_str)
             print(string.format("[DR+] %s wants to deathroll you starting from %d!", short_sender, opp_request_max_roll))
@@ -115,6 +118,23 @@ addon_listener:SetScript("OnEvent", function(self, event, prefix, message, chann
         elseif msg_type == "RemoveRequest" then -- removes player from list
             requests[short_sender] = nil
             print(string.format("[DR+] %s canceled their roll.", short_sender))
+
+        elseif msg_type == "AcceptRequest" then -- confirms we accept their game
+            print(string.format("[DR+] %s accepts your deathroll!", short_sender))
+            request_accepted = true
+
+        elseif msg_type == "CancelGame" then
+            print(string.format("[DR+] %s has requested to cancel the deathroll.\nType /drcancel to agree or /drcontinue to deny.", short_sender))
+            cancel_confirmation = true
+
+        elseif msg_type == "CancelConfirm" then
+            print(string.format("[DR+] %s agreed to cancel the deathroll.", short_sender))
+            cancel_confirmation = false
+            end_game()
+
+        elseif msg_type == "CancelDeny" then
+            print(string.format("[DR+] %s denied your request to cancel the deathroll.", short_sender))
+            cancel_lock = true
         end
     end
 end)
@@ -125,9 +145,9 @@ function send_addon_data(message, channel, target, sender)
         print("[DR+] send_addon_data had no message and was not sent.")
     elseif channel == "WHISPER" and target then
         C_ChatInfo.SendAddonMessage(prefix, message, "WHISPER", target)
-        cancel_lock = true
+        cancel_timer = true
         C_Timer.After(10, function()
-            cancel_lock = false
+            cancel_timer = false
         end)
     end
 end
@@ -152,7 +172,7 @@ function textbox_start_roll()
             starting_roll = textbox_roll
             curr_opp = target_name
             wait_for_my_roll = true
-            start_game() -- remember to end game if it's denied, times out or if we cancel our request!
+            start_game()
         end
     else
         print("[DR+] Please enter a roll.")
@@ -171,7 +191,13 @@ roll_listener:SetScript("OnEvent", function(self, event, msg, sender, ...)
     chat_roller = temp_chat_roller -- we have to do this because fuck programming
     
     if rolled_min_number ~= 1 then -- if minimum roll is not 1
-        scam_alert("min_not_one", chat_roller, rolled_min_number)
+        if in_game and my_turn and chat_roller == curr_opp and request_accepted then -- if it's a wrong turn it must also be called out.
+            scam_alert("wrong_turn + min_not_one", curr_opp, nil, rolled_min_number)
+        elseif in_game and my_turn == false and chat_roller == me and request_accepted then -- if it's a wrong turn it must also be called out.
+            scam_alert("wrong_turn + min_not_one", me, nil, rolled_min_number)
+        else
+            scam_alert("min_not_one", chat_roller, nil, rolled_min_number)
+        end
 
     elseif in_game and chat_roller == me then -- if we're in game and the roller is myself
         if my_turn == false then -- if it's not our turn then we're scamming
@@ -195,7 +221,7 @@ roll_listener:SetScript("OnEvent", function(self, event, msg, sender, ...)
             my_turn = false
         end
 
-    elseif in_game and curr_opp == chat_roller then -- if we're in game and the roller is our opponent
+    elseif in_game and curr_opp == chat_roller and request_accepted then -- if we're in game and the roller is our opponent
         if my_turn then
             scam_alert("wrong_turn", curr_opp)
 
@@ -240,6 +266,7 @@ function button_click()
             request_check()
             if target_request == true then
                 if textbox:GetText() == "" then
+                    request_accepted = true
                     start_game()
                 else
                     print(string.format("[DR+] %s already has a roll request pending. Type /dr to roll their %d?", requests(tostring[target_name]), requests[target_name].opp_request_roll))
@@ -273,6 +300,7 @@ end
 
 function start_game() -- function should activate if a game starts
     if target_request == true then
+        send_addon_data("AcceptRequest", "WHISPER", target_name)
         curr_opp = target_name
         starting_roll = requests[target_name].opp_request_roll
         if curr_opp then -- we need to check if curr_opp is not already nil i guess
@@ -296,6 +324,8 @@ function end_game() -- should activate if a game ends; resets globals to default
     in_game = false
     my_turn = true
     target_request = false
+    request_accepted = false
+    cancel_lock = false
     button:SetText("Start Roll!")
 end
 
@@ -322,11 +352,13 @@ end
 
 function scam_alert(scam_type, scammer, value, expected_roll)
     if scam_type == "min_not_one" then
-        print(string.format("[DR+] %s's minimum roll was %d instead of 1. They are scamming someone!", scammer, value))
+        print(string.format("[DR+] %s's minimum roll was %d instead of 1. They are scamming!", scammer, expected_roll))
     elseif scam_type == "wrong_max" then
         print(string.format("[DR+] %s rolled for %d instead of %d. They are scamming!", scammer, value, expected_roll))
     elseif scam_type == "wrong_turn" then
         print(string.format("[DR+] %s rolled out of turn!", scammer))
+    elseif scam_type == "wrong_turn + min_not_one" then
+        print(string.format("[DR+] %s rolled out of turn AND their minimum roll was %d instead of 1. They are scamming!", scammer, expected_roll))
     end
 end
 
@@ -351,8 +383,10 @@ SlashCmdList["DEATHROLL"] = function(msg) -- msg is whatever player types after 
             request_check()
             if target_request == true then
                 if msg == "" then
+                    request_accepted = true
                     start_game()
                 elseif tonumber(msg) == requests[target_name].opp_request_roll then
+                    request_accepted = true
                     start_game()
                 else
                     print(string.format("[DR+] %s already has a roll request pending. Type /dr to roll their %d?", requests[target_name], requests[target_name].opp_request_roll))
@@ -374,31 +408,40 @@ SlashCmdList["DEATHROLL"] = function(msg) -- msg is whatever player types after 
     end
 end
 
-SLASH_DEATHROLLBUTTON1 = "/drbutton"
-SLASH_DEATHROLLBUTTON2 = "/deathrollbutton"
-SLASH_DEATHROLLBUTTON3 = "/dr button"
-SLASH_DEATHROLLBUTTON4 = "/deathroll button"
-SlashCmdList["DEATHROLLBUTTON"] = function() -- hide and show the button
-    if parentFrame:IsShown() then
-        parentFrame:Hide()
-    else parentFrame:Show()
-    end
-end
-
 SLASH_DEATHROLLCANCEL1 = "/dr cancel"
 SLASH_DEATHROLLCANCEL2 = "/drcancel"
 SlashCmdList["DEATHROLLCANCEL"] = function()
-    if in_game then
-        if cancel_lock == true then
-            print("[DR+] You can't cancel your request yet.")
-        else
-            print("[DR+] Deathroll canceled.")
-            send_addon_data("RemoveRequest", "WHISPER", target_name)
-            end_game()
-        end
+    if cancel_confirmation == true then
+        print(string.format("[DR+] Deathroll with %s canceled.", curr_opp))
+        send_addon_data("CancelConfirm", "WHISPER", target_name)
+        end_game()
+    elseif cancel_lock == true then
+        print("[DR+] You can't request to cancel again.")
+
     else
-        print("[DR+] You're not in a deathroll right now.")
+        if in_game and request_accepted == false then -- we've started a game but opp hasn't accepted yet, then we can just cancel dr.
+            if cancel_timer == true then
+                print("[DR+] You can't cancel your request yet.")
+            else
+                print("[DR+] Deathroll request canceled.")
+                send_addon_data("RemoveRequest", "WHISPER", target_name)
+                end_game()
+            end
+            
+        elseif in_game and request_accepted then -- if we're midgame they need to agree to for cancellation though
+            send_addon_data("CancelGame", "WHISPER", target_name)
+            print(string.format("[DR+] Cancellation request sent to %s", curr_opp))
+        else
+            print("[DR+] You're not in a deathroll right now.")
+        end
     end
+end
+
+SLASH_DEATHROLLCONTINUE1 = "/drcontinue"
+SlashCmdList["DEATHROLLCONTINUE"] = function()
+    print("[DR+] Cancellation request denied.")
+    send_addon_data("CancelDeny", "WHISPER", target_name)
+    cancel_confirmation = false
 end
 
 SLASH_DEATHROLLGAMES1 = "/drgame"
@@ -413,12 +456,24 @@ SlashCmdList["DEATHROLLGAMES"] = function()
     end
 end
 
+SLASH_DEATHROLLBUTTON1 = "/drbutton"
+SLASH_DEATHROLLBUTTON2 = "/deathrollbutton"
+SLASH_DEATHROLLBUTTON3 = "/dr button"
+SLASH_DEATHROLLBUTTON4 = "/deathroll button"
+SlashCmdList["DEATHROLLBUTTON"] = function() -- hide and show the button
+    if parentFrame:IsShown() then
+        parentFrame:Hide()
+    else parentFrame:Show()
+    end
+end
+
 SLASH_DEATHROLLDEBUG1 = "/drd"
 SlashCmdList["DEATHROLLDEBUG"] = function()
     print("===== Death Roll Debug =====")
     print("Player Targeted: " .. tostring(player_targeted))
     print("Target Name: " .. tostring(target_name))
     print("Target Request: " .. tostring(target_request))
+    print("Request Accepted: " .. tostring(request_accepted))
     print("Total Rolls Recorded: " .. tostring(#rolls))
     print("Chat Roller: " .. tostring(chat_roller))
     print("Rolled Number: " .. tostring(rolled_number))
