@@ -8,12 +8,6 @@ local prefix = "deathroll_data"
 local me = UnitName("player")
 local my_max_roll = 0
 local my_roll = 0 -- result of my roll
-local rolls = {} -- list of all rolls
-local requests = {} -- list of roll requests
-local cancel_confirmation = false
-local cancel_lock = false
-
-local target_name = nil
 local curr_opp = nil -- opponent of current game
 local curr_opp_roll = 0 -- what did our opponent roll
 
@@ -22,6 +16,8 @@ local my_request_pending = false
 local in_game = false -- are we in a game right now
 local my_turn = true -- is it our turn
 local cancel_timer = false -- timer which prevents cancel abuse
+local cancel_confirmation = false
+local cancel_lock = false
 
 -- functions
 local player_targeting -- function to check 2 variables
@@ -29,11 +25,24 @@ local do_roll
 local start_game
 local end_game
 local scam_alert
-local list_add
 local button_click
 local send_addon_data
-local add_request
+local request_add
 local request_check
+local history_add
+
+local addon_loader = CreateFrame("Frame") -- addon loading stuff
+addon_loader:RegisterEvent("ADDON_LOADED")
+addon_loader:SetScript("OnEvent", function(self, event, addon_name)
+    if addon_name == "deathroll_unnamed" then
+        if not DrDB then
+            DrDB = {}
+        end
+        DrDB.global_stats = DrDB.global_stats or {total_games = 0}
+        DrDB.games = DrDB.games or {}
+        DrDB.requests = DrDB.requests or {}
+    end
+end)
 
 -- Create draggable parent frame
 local parentFrame = CreateFrame("Frame", "DeathrollFrame", UIParent, "BackdropTemplate")
@@ -100,10 +109,10 @@ addon_listener:SetScript("OnEvent", function(self, event, prefix, message, chann
             local opp_request_max_roll = tonumber(opp_request_max_roll_str)
             local opp_request_roll = tonumber(opp_request_roll_str)
             print(string.format("[DR+] %s wants to deathroll you starting from %d!", short_sender, opp_request_max_roll))
-            add_request(short_sender, opp_request_roll, opp_request_max_roll)
+            request_add(short_sender, opp_request_roll, opp_request_max_roll)
 
         elseif msg_type == "RemoveRequest" then -- removes player from list
-            requests[short_sender] = nil
+            DrDB.requests[short_sender] = nil
             print(string.format("[DR+] %s canceled their roll.", short_sender))
 
         elseif msg_type == "AcceptRequest" then -- confirms we accept their game
@@ -143,7 +152,6 @@ roll_listener:SetScript("OnEvent", function(self, event, msg, sender, ...)
     local rolled_max_number = tonumber(rolled_max_str) 
     local rolled_min_number = tonumber(rolled_min_str) 
     
-    
     if rolled_min_number ~= 1 then -- if minimum roll is not 1
         if in_game and my_turn and chat_roller == curr_opp then -- if it's a wrong turn it must also be called out.
             scam_alert("wrong_turn + min_not_one", curr_opp, nil, rolled_min_number)
@@ -160,13 +168,13 @@ roll_listener:SetScript("OnEvent", function(self, event, msg, sender, ...)
             my_turn = false
             local x, target_name = player_targeting()
             send_addon_data("GameRequest:" .. my_roll .. ":" .. my_max_roll, "WHISPER", target_name)
+            history_add(time(), chat_roller, rolled_number, rolled_max_number, curr_opp, "NewGame")
 
         elseif chat_roller == curr_opp then
             if rolled_max_number ~= my_roll then
-                scam_alert("wrong_max", curr_opp, rolled_max_number, my_roll)
-                
+                return
             elseif rolled_number == 1 then
-                print("[DR+] You won!")
+                print("[DR+] You won!") -- TODO
                 end_game()
                 
             else -- otherwise the game continues
@@ -187,10 +195,12 @@ roll_listener:SetScript("OnEvent", function(self, event, msg, sender, ...)
         elseif rolled_number == 1 then -- if we rolled 1 we lost
             print("[DR+] You lost!")
             end_game()
+            history_add(time(), chat_roller, rolled_number, rolled_max_number, "", "EndGame", "OppWin") -- TODO
             
         else -- otherwise the game continues
             my_roll = rolled_number
             my_turn = false
+            history_add(time(), chat_roller, rolled_number, rolled_max_number, "", "Roll")
         end
         
     elseif in_game and curr_opp == chat_roller then
@@ -204,15 +214,17 @@ roll_listener:SetScript("OnEvent", function(self, event, msg, sender, ...)
             elseif rolled_number == 1 then
                 print("[DR+] You won!")
                 end_game()
+                history_add(time(), chat_roller, rolled_number, rolled_max_number, "", "EndGame", "MyWin") -- TODO
                 
             else -- otherwise the game continues
                 curr_opp_roll = rolled_number
                 my_turn = true
+                history_add(time(), chat_roller, rolled_number, rolled_max_number, "", "Roll")
             end
         end
         
-    else -- if it's not an illegal roll, it's not ours or part of our game, fuck it just add it to the list anyway. 
-        return -- list_add()
+    else -- if it's not an illegal roll, it's not ours or part of our game, discard it.
+        return 
     end
 end)
 
@@ -220,43 +232,58 @@ function start_game(starting_roll, source)
     local player_targeted, target_name = player_targeting()
     if not player_targeted then
         print("[DR+] Please target a player to start a deathroll, type /drgames to see who wants to roll you.")
-
+            
     else -- player targeted
         local target_request_pending, target_roll, target_max_roll = request_check(target_name)
 
         if my_request_pending and target_request_pending then
             print("[DR+] You both have a roll request pending. Type /drcancel to cancel your roll request.")
+            if source == "Button" then
+                textbox:SetText("")
+                textbox:ClearFocus()
+            end
 
-        elseif my_request_pending and target_name ~= curr_opp then
+        elseif my_request_pending then
+            if source == "Button" then
+                textbox:SetText("")
+                textbox:ClearFocus()
+            end
             print("[DR+] You can't start another deathroll while you have a roll request pending.")
 
         elseif target_request_pending then
-            if starting_roll == 0 then
+            if starting_roll == 0 or starting_roll == DrDB.requests[target_name][3] then
                 do_roll("AcceptRequest", target_name, target_roll)
-                if target_name then
-                    requests[target_name] = nil
-                end
-                
-            elseif starting_roll == requests[target_name].roll then
-                do_roll("AcceptRequest", target_name, starting_roll)
-                if target_name then
-                    requests[target_name] = nil
+                if target_name then -- move from requests to games
+                    table.insert(DrDB.games, {stats = {target_name}, rolls = {DrDB.requests[target_name]}})
+                    DrDB.requests[target_name] = nil
                 end
             else
+                if source == "Button" then
+                    textbox:SetText("")
+                    textbox:ClearFocus()
+                end
                 print(string.format("[DR+] %s already has a roll request pending. Type /dr to roll their %d.", target_name, target_roll))
             end
             
         else -- no requests
             if starting_roll == 0 then
                 print("[DR+] Please enter a roll.")
-                if source == "button" then
-                    textbox:SetText("")
+                if source == "Button" then
+                    textbox:SetFocus()
                 end
             else   
                 if starting_roll < 2 or starting_roll > 1000000 then -- min and max rolls are invalid
+                    if source == "Button" then
+                        textbox:SetText("")
+                        textbox:SetFocus()
+                    end
                     print("[DR+] Please enter a valid roll.")
                 else
                     do_roll("SendRequest", target_name, starting_roll)
+                    if source == "Button" then
+                        textbox:SetText("")
+                        textbox:ClearFocus()
+                    end
                 end
             end
         end
@@ -271,12 +298,12 @@ function button_click()
         elseif my_turn == true then
             textbox:SetText("") -- if we're in game we don't care what the textbox has.
             textbox:ClearFocus()
-            do_roll("Roll", target_name, curr_opp_roll)
+            do_roll("Roll", curr_opp, curr_opp_roll)
         end
 
     elseif in_game == false then -- if we're not in game
         local roll = tonumber(textbox:GetText()) or 0
-        start_game(roll)
+        start_game(roll, "Button")
     end
 end
 
@@ -290,18 +317,17 @@ SlashCmdList["DEATHROLL"] = function(msg) -- msg is whatever player types after 
             if msg ~= "" and tonumber(msg) ~= curr_opp_roll then
                 print("[DR+] That's not the right roll.")
             else
-                do_roll("Roll", target_name, curr_opp_roll)
+                do_roll("Roll", curr_opp, curr_opp_roll)
             end
         end
     else
         local roll = tonumber(msg) or 0
-        start_game(roll)
+        start_game(roll, "Command")
     end
 end
 
 function do_roll(type, target_name, roll)
     if type == "Roll" then
-       
     elseif type == "SendRequest" then
         my_request_pending = true
         curr_opp = target_name
@@ -321,23 +347,40 @@ function do_roll(type, target_name, roll)
     ChatEdit_SendText(ChatFrame1EditBox)  
 end
 
+function history_add(time, player, roll, max_roll, opp, type, result)
+    if not DrDB.games then DrDB.games = {} end
+    local curr = DrDB.games[#DrDB.games] -- assess current game
+
+    if type == "NewGame" then
+        table.insert(DrDB.games, {stats = {opp}, rolls = {}})
+    elseif type == "Roll" then
+    elseif type == "EndGame" then
+        table.insert(curr.stats, result)
+        -- DrDB.globalstats["total_games"] = DrDB.globalstats["total_games"] + 1
+    end
+    
+    curr = DrDB.games[#DrDB.games] -- re assess current game
+    table.insert(curr.rolls, {time, player, roll, max_roll})
+end
+
+-- add a game request to a table
+function request_add(opp_request, opp_request_roll, opp_request_max_roll)
+    if not DrDB.requests then DrDB.requests = {} end
+    DrDB.requests = {[opp_request] = {time(), opp_request, opp_request_roll, opp_request_max_roll}}
+end
+
 function request_check(target_name)
-    if next(requests) == nil then
+    if not DrDB.requests or next(DrDB.requests) == nil then
         return nil, 0, 0
     else 
-        for opp_request in pairs(requests) do
+        for opp_request in pairs(DrDB.requests) do
             if opp_request == target_name then -- if they're in our request list, accept the roll
-                return true, requests[target_name].opp_request_roll, requests[target_name].opp_request_max_roll
+                return true, DrDB.requests[target_name][3], DrDB.requests[target_name][4]
             else
                 return false, 0, 0
             end
         end
     end
-end
-
--- add a game request to a table
-function add_request(opp_request, opp_request_roll, opp_request_max_roll)
-    requests[opp_request] = {opp_request_roll = opp_request_roll, opp_request_max_roll = opp_request_max_roll}
 end
 
 function end_game() -- should activate if a game ends; resets globals to default
@@ -371,16 +414,11 @@ function scam_alert(scam_type, scammer, value, expected_roll)
     end
 end
 
--- function list_add()
---     if chat_roller and rolled_number then
---         if not rolls[chat_roller] then -- if roller is not in roll list
---         rolls[chat_roller] = {} -- add them
---         end
---         table.insert(rolls[chat_roller], rolled_number) -- add rolls to existing name
---     else
---         print("[DR+] List_add called with nil values!")
---     end
--- end
+SLASH_DEATHROLLCLEAR1 = "/drclear"
+SlashCmdList["DEATHROLLCLEAR"] = function()
+    table.wipe(DrDB.games)
+    print("[DR+] Game history cleared.")
+end
 
 SLASH_DEATHROLLCANCEL1 = "/dr cancel"
 SLASH_DEATHROLLCANCEL2 = "/drcancel"
@@ -396,7 +434,7 @@ SlashCmdList["DEATHROLLCANCEL"] = function()
         if cancel_timer == true then
             print("[DR+] You can't cancel your request yet.")
         else
-            send_addon_data("RemoveRequest", "WHISPER", curr_opp)
+            send_addon_data("RemoveRequest", "WHISPER", curr_opp) -- TODO: remove roll from games as well
             print("[DR+] Deathroll request canceled.")
             end_game()
         end
@@ -422,9 +460,9 @@ end
 SLASH_DEATHROLLGAMES1 = "/drgame"
 SLASH_DEATHROLLGAMES2 = "/drgames"
 SlashCmdList["DEATHROLLGAMES"] = function()
-    if next(requests) ~= nil then
-        for opp_request, data in pairs(requests) do
-            print(string.format("[DR+] %s started from %d and rolled %d.\n", opp_request, data.opp_request_max_roll, data.opp_request_roll))
+    if next(DrDB.requests) ~= nil then
+        for player, rolls in pairs(DrDB.requests) do
+            print(string.format("[DR+] %s started from %d and rolled %d.\n", player, rolls[3], rolls[4]))
         end
     else
         print("[DR+] You have no deathroll requests right now.")
@@ -449,9 +487,7 @@ SlashCmdList["DEATHROLLDEBUG"] = function()
     print("In Game: " .. tostring(in_game))
     print("My Turn: " .. tostring(my_turn))
     print("My Request Pending: " .. tostring(my_request_pending))
-    print("Target Name: " .. tostring(target_name))
     print("Current Opponent: " .. tostring(curr_opp))
     print("Current Opponent Roll: " .. tostring(curr_opp_roll))
-    print("Total Rolls Recorded: " .. tostring(#rolls))
     print("=========================")
 end

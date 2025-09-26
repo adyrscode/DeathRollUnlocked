@@ -4,5 +4,6 @@
 ## Notes: Gambling
 ## Author: Adyr & Queuebee
 ## DefaultState: enabled
+## SavedVariables: DrDB
 
 deathroll_unnamed.lua
