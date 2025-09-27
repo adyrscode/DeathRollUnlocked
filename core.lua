@@ -29,16 +29,16 @@ local button_click
 local send_addon_data
 local request_add
 local request_check
-local history_add
+local history_change
 
 local addon_loader = CreateFrame("Frame") -- addon loading stuff
 addon_loader:RegisterEvent("ADDON_LOADED")
 addon_loader:SetScript("OnEvent", function(self, event, addon_name)
     if addon_name == "deathroll_unnamed" then
-        if not DrDB then
+        if not DrDB or type(DrDB) ~= "table" then
             DrDB = {}
         end
-        DrDB.global_stats = DrDB.global_stats or {total_games = 0}
+        DrDB.global_stats = DrDB.global_stats or {total_wins = 0, total_losses = 0}
         DrDB.games = DrDB.games or {}
         DrDB.requests = DrDB.requests or {}
     end
@@ -125,6 +125,7 @@ addon_listener:SetScript("OnEvent", function(self, event, prefix, message, chann
         elseif msg_type == "CancelConfirm" then
             print(string.format("[DR+] %s agreed to cancel the deathroll.", short_sender))
             cancel_confirmation = false
+            history_change(nil, nil, nil, nil, nil, "EndGame", "Cancel")
             end_game()
 
         elseif msg_type == "CancelDeny" then
@@ -147,7 +148,9 @@ end
 local roll_listener = CreateFrame("Frame")
 roll_listener:RegisterEvent("CHAT_MSG_SYSTEM")  -- system messages, like rolls
 roll_listener:SetScript("OnEvent", function(self, event, msg, sender, ...)
-    local chat_roller, rolled_number_str, rolled_min_str, rolled_max_str = string.match(msg, "^(.-) rolls (%d+) %((%d+)-(%d+)%)$") -- is it a roll?
+    if not msg:find("rolls", 1, true) then return end -- if not roll then discard
+
+    local chat_roller, rolled_number_str, rolled_min_str, rolled_max_str = string.match(msg, "^(.-) rolls (%d+) %((%d+)-(%d+)%)$") -- transform from string to information
     local rolled_number = tonumber(rolled_number_str) -- change roll to number
     local rolled_max_number = tonumber(rolled_max_str) 
     local rolled_min_number = tonumber(rolled_min_str) 
@@ -168,20 +171,20 @@ roll_listener:SetScript("OnEvent", function(self, event, msg, sender, ...)
             my_turn = false
             local x, target_name = player_targeting()
             send_addon_data("GameRequest:" .. my_roll .. ":" .. my_max_roll, "WHISPER", target_name)
-            history_add(time(), chat_roller, rolled_number, rolled_max_number, curr_opp, "NewGame")
+            history_change(time(), chat_roller, rolled_number, rolled_max_number, curr_opp, "NewGame")
 
-        elseif chat_roller == curr_opp then
+        elseif chat_roller == curr_opp and rolled_max_number == my_roll then
             if rolled_max_number ~= my_roll then
                 return
             elseif rolled_number == 1 then
                 print("[DR+] You won!") -- TODO
                 end_game()
-                
             else -- otherwise the game continues
                 curr_opp_roll = rolled_number
                 my_turn = true
                 in_game = true
                 my_request_pending = false
+                history_change(time(), chat_roller, rolled_number, rolled_max_number, "", "Roll")
             end 
         end
         
@@ -195,12 +198,12 @@ roll_listener:SetScript("OnEvent", function(self, event, msg, sender, ...)
         elseif rolled_number == 1 then -- if we rolled 1 we lost
             print("[DR+] You lost!")
             end_game()
-            history_add(time(), chat_roller, rolled_number, rolled_max_number, "", "EndGame", "OppWin") -- TODO
+            history_change(time(), chat_roller, rolled_number, rolled_max_number, "", "EndGame", "MyLoss") -- TODO
             
         else -- otherwise the game continues
             my_roll = rolled_number
             my_turn = false
-            history_add(time(), chat_roller, rolled_number, rolled_max_number, "", "Roll")
+            history_change(time(), chat_roller, rolled_number, rolled_max_number, "", "Roll")
         end
         
     elseif in_game and curr_opp == chat_roller then
@@ -214,12 +217,12 @@ roll_listener:SetScript("OnEvent", function(self, event, msg, sender, ...)
             elseif rolled_number == 1 then
                 print("[DR+] You won!")
                 end_game()
-                history_add(time(), chat_roller, rolled_number, rolled_max_number, "", "EndGame", "MyWin") -- TODO
+                history_change(time(), chat_roller, rolled_number, rolled_max_number, "", "EndGame", "MyWin") -- TODO
                 
             else -- otherwise the game continues
                 curr_opp_roll = rolled_number
                 my_turn = true
-                history_add(time(), chat_roller, rolled_number, rolled_max_number, "", "Roll")
+                history_change(time(), chat_roller, rolled_number, rolled_max_number, "", "Roll")
             end
         end
         
@@ -347,24 +350,37 @@ function do_roll(type, target_name, roll)
     ChatEdit_SendText(ChatFrame1EditBox)  
 end
 
-function history_add(time, player, roll, max_roll, opp, type, result)
-    if not DrDB.games then DrDB.games = {} end
-    local curr = DrDB.games[#DrDB.games] -- assess current game
+function history_change(time, player, roll, max_roll, opp, type, result)
+    DrDB.games = DrDB.games or {}
+    DrDB.global_stats = DrDB.global_stats or {}
+    local curr_game = DrDB.games[#DrDB.games] -- assess current game
 
     if type == "NewGame" then
         table.insert(DrDB.games, {stats = {opp}, rolls = {}})
+
     elseif type == "Roll" then
+
     elseif type == "EndGame" then
-        table.insert(curr.stats, result)
-        -- DrDB.globalstats["total_games"] = DrDB.globalstats["total_games"] + 1
+        if result == "MyWin" then
+            if DrDB.global_stats.total_wins == nil then DrDB.global_stats.total_wins = 0 end
+            DrDB.global_stats["total_wins"] = DrDB.global_stats["total_wins"] + 1
+        elseif result == "MyLoss" then
+            if DrDB.global_stats.total_losses == nil then DrDB.global_stats.total_losses = 0 end
+            DrDB.global_stats["total_losses"] = DrDB.global_stats["total_losses"] + 1
+        elseif result == "Cancel" then
+            table.remove(DrDB.games, #DrDB.games)
+            return
+        end
+        
+        table.insert(curr_game.stats, result)
     end
     
-    curr = DrDB.games[#DrDB.games] -- re assess current game
-    table.insert(curr.rolls, {time, player, roll, max_roll})
+    curr_game = DrDB.games[#DrDB.games] -- re assess current game
+    table.insert(curr_game.rolls, {time, player, roll, max_roll})
 end
 
 -- add a game request to a table
-function request_add(opp_request, opp_request_roll, opp_request_max_roll)
+function request_add(opp_request, opp_request_roll, opp_request_max_roll) -- TODO: add to history_add
     if not DrDB.requests then DrDB.requests = {} end
     DrDB.requests = {[opp_request] = {time(), opp_request, opp_request_roll, opp_request_max_roll}}
 end
@@ -414,31 +430,27 @@ function scam_alert(scam_type, scammer, value, expected_roll)
     end
 end
 
-SLASH_DEATHROLLCLEAR1 = "/drclear"
-SlashCmdList["DEATHROLLCLEAR"] = function()
-    table.wipe(DrDB.games)
-    print("[DR+] Game history cleared.")
-end
-
 SLASH_DEATHROLLCANCEL1 = "/dr cancel"
 SLASH_DEATHROLLCANCEL2 = "/drcancel"
 SlashCmdList["DEATHROLLCANCEL"] = function()
     if cancel_confirmation == true then
         send_addon_data("CancelConfirm", "WHISPER", curr_opp)
+        history_change(nil, nil, nil, nil, nil, "EndGame", "Cancel")
         print(string.format("[DR+] Deathroll with %s canceled.", curr_opp))
         end_game()
     elseif cancel_lock == true then
         print("[DR+] You can't request to cancel again.")
-
+        
     elseif my_request_pending then
         if cancel_timer == true then
             print("[DR+] You can't cancel your request yet.")
         else
             send_addon_data("RemoveRequest", "WHISPER", curr_opp) -- TODO: remove roll from games as well
+            history_change(nil, nil, nil, nil, nil, "EndGame", "Cancel")
             print("[DR+] Deathroll request canceled.")
             end_game()
         end
-
+        
     else            
         if in_game then -- if we're midgame they need to agree to for cancellation though
             send_addon_data("CancelGame", "WHISPER", curr_opp)
@@ -448,6 +460,20 @@ SlashCmdList["DEATHROLLCANCEL"] = function()
             print("[DR+] You're not in a deathroll right now.")
         end
     end
+end
+
+SLASH_DEATHROLLCLEAR1 = "/drclear"
+SlashCmdList["DEATHROLLCLEAR"] = function()
+    table.wipe(DrDB.games)
+    DrDB.global_stats["total_wins"] = 0
+    DrDB.global_stats["total_losses"] = 0
+    print("[DR+] Game history cleared.")
+end
+
+SLASH_DEATHROLLWIPE1 = "/drwipe"
+SlashCmdList["DEATHROLLWIPE"] = function()
+    table.wipe(DrDB)
+    print("[DR+] DrDB has been wiped.")
 end
 
 SLASH_DEATHROLLCONTINUE1 = "/drcontinue"

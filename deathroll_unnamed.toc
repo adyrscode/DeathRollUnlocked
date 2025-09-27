@@ -6,4 +6,4 @@
 ## DefaultState: enabled
 ## SavedVariables: DrDB
 
-deathroll_unnamed.lua
+core.lua

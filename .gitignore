@@ -3,5 +3,5 @@
 
 # But not these files
 !.gitignore
-!deathroll_unnamed.lua
+!core.lua
 !deathroll_unnamed.toc
