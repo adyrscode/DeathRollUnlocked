@@ -2,13 +2,28 @@
 
 local DRU = DeathRollUnlocked
 
+function DRU.GetGameState() -- gets full gamestate and adds it to 1 table
+    local in_game, curr_game = DRU.GameCheck()
+    local my_turn = DRU.TurnCheck()
+    local curr_opp = DRU.GetCurrOpp()
+    local last_roller, last_roll = DRU.GetRoll()
+    DRU.gamestate.in_game = in_game
+    DRU.gamestate.curr_game = curr_game
+    DRU.gamestate.my_turn = my_turn
+    DRU.gamestate.curr_opp = curr_opp
+    DRU.gamestate.last_roller = last_roller
+    DRU.gamestate.last_roll = last_roll
+end
+
 function DRU.HistoryChange(type, player, roll, max_roll, time, result, opp) -- adds rolls to ongoing games or adds requests (can also cancel roll)
     DRUDB.games = DRUDB.games or {} -- extra checks
     DRUDB.global_stats = DRUDB.global_stats or {}
     DRUDB.requests = DRUDB.requests or {}
     local _, curr_game = DRU.GameCheck()
-
-    if type == "NewRequest" then
+    if type == nil then
+        return
+        
+    elseif type == "NewRequest" then
         DRUDB.requests = {[player] = {time, player, roll, max_roll}}
     
     elseif type == "MoveRequest" then
@@ -50,6 +65,7 @@ function DRU.HistoryChange(type, player, roll, max_roll, time, result, opp) -- a
 end
 
 function DRU.RequestCheck(target_name) -- checks if target selected is in request list, and gives back all bool, time, player, roll, maxroll
+print("Getting request!")
     if not DRUDB.requests or next(DRUDB.requests) == nil then
         return false, 0, nil, 0, 0 
     else 
@@ -63,12 +79,37 @@ function DRU.RequestCheck(target_name) -- checks if target selected is in reques
     end
 end
 
-function DRU.GetRoll(player) -- get player's last roll. if no player is specified, get last roll.
+function DRU.GameCheck() -- returns in_game, curr_game table
+print("Getting gamecheck!")
+    local _, last_roll = DRU.GetRoll()
+    if last_roll == 1 or last_roll == nil then
+        return false, nil
+    else
+        return true, DRUDB.games[#DRUDB.games]
+    end
+end
+
+function DRU.TurnCheck() -- returns my_turn
+print("Getting turn!")
+    local in_game = DRU.GameCheck()
+    local last_roller = DRU.GetRoll()
+    if not in_game then
+        return nil
+    else
+        if last_roller ~= DRU.me then
+            return true
+        else
+            return false
+        end
+    end
+end
+
+function DRU.GetRoll(player) -- returns roller, roll, max_roll
+print("Getting roll!")
     DRUDB.games = DRUDB.games or {}
     local curr_game = DRUDB.games[#DRUDB.games]
-    local curr_opp = DRU.GetCurrOpp()
     if curr_game == nil then
-        return nil
+        return nil, nil, nil
     end
 
     if player == nil then -- if no player specified just get the most recent roll
@@ -87,34 +128,8 @@ function DRU.GetRoll(player) -- get player's last roll. if no player is specifie
     end
 end
 
-function DRU.TurnCheck()
-    local in_game = DRU.GameCheck()
-    local last_roller = DRU.GetRoll()
-    if not in_game then
-        return nil
-    else
-        if last_roller ~= DRU.me then
-            return true
-        else
-            return false
-        end
-    end
-end
-
-function DRU.GameCheck() -- checks if last roll was 1 to determine if we are currently in a game or not. also returns game table
-    local _, last_roll = DRU.GetRoll()
-    if last_roll == 1 or last_roll == nil then
-        return false, nil
-    else
-        return true, DRUDB.games[#DRUDB.games]
-    end
-end
-
-function DRU.GetLastGame() -- returns most recent game, ongoing or not
-    return DRUDB.games[#DRUDB.games]
-end
-
-function DRU.GetCurrOpp()
+function DRU.GetCurrOpp() -- returns curr_opp
+    print("Getting curr_opp!")
     local curr_game = DRUDB.games[#DRUDB.games]
     if curr_game == nil then
         return nil
@@ -122,6 +137,10 @@ function DRU.GetCurrOpp()
         local curr_opp = curr_game.stats[1]
         return curr_opp
     end
+end
+
+function DRU.GetLastGame() -- returns most recent game, ongoing or not
+    return DRUDB.games[#DRUDB.games]
 end
 
 SLASH_DEATHROLLGAMES1 = "/drgame"

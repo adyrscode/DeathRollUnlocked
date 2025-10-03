@@ -7,23 +7,25 @@ local DRU = DeathRollUnlocked
 
 -- players and their rolls
 DRU.me = UnitName("player")
+local target_name = nil
 
 -- game states
+DRU.gamestate = {in_game = false, curr_game = nil, my_turn = false, curr_opp = nil, last_roller = nil, last_roll = 0}
+local gs = DRU.gamestate
 local my_request_sent = false
 local my_request_pending = false
-local cancel_timer = false -- timer which prevents cancel abuse
+local cancel_timer = false -- timer which prevents cancel abuse (TODO)
 local cancel_confirmation = false
 local cancel_lock = false
 local player_targeted = false
-local target_name = nil
 
 -- functions
 local target_check -- function to check 2 variables
 local do_roll
 local start_game
 local end_game
-local scam_alert
 local scam_checker
+local scam_alert
 local button_click
 local send_addon_data
 
@@ -37,6 +39,7 @@ addon_loader:SetScript("OnEvent", function(self, event, addon_name)
         DRUDB.global_stats = DRUDB.global_stats or {total_wins = 0, total_losses = 0}
         DRUDB.games = DRUDB.games or {}
         DRUDB.requests = DRUDB.requests or {}
+        DRU.GetGameState()
     end
 end)
 
@@ -145,54 +148,51 @@ local roll_parser = CreateFrame("Frame")
 roll_parser:RegisterEvent("CHAT_MSG_SYSTEM")  -- system messages, like rolls
 roll_parser:SetScript("OnEvent", function(self, event, msg, sender, ...)
     if not msg:find("rolls", 1, true) then return end -- if not roll then discard
-        
-        local in_game = DRU.GameCheck()
-        local curr_opp = DRU.GetCurrOpp()
-        
+        DRU.GetGameState()
+    
+        local history_type = nil
+        local print_type = ""
+        local result = nil
         local roller, roll_str, min_roll_str, max_roll_str = string.match(msg, "^(.-) rolls (%d+) %((%d+)-(%d+)%)$") -- transform from string to information
         local roll = tonumber(roll_str) -- change roll to number
         local max_roll = tonumber(max_roll_str) 
         local min_roll = tonumber(min_roll_str) 
         
-        if my_request_sent and roller == DRU.me then -- TODO: what if we roll 1 instantly?
+        if my_request_sent and roller == DRU.me then -- sent & pending are different states because reasons
             my_request_sent = false
             my_request_pending = true
             player_targeted, target_name = target_check()
             send_addon_data("GameRequest:" .. roll .. ":" .. max_roll, "WHISPER", target_name)
-            DRU.HistoryChange("NewGame", roller, roll, max_roll, time(), nil, target_name)
+            history_type = "NewGame"
             
         elseif my_request_pending then -- TODO: what if they roll 1 instantly?
-            if roller == curr_opp then
-                local scam, scam_type, exp_roll = scam_checker(min_roll, max_roll, roller)
-                if scam then
-                    scam_alert(scam_type, roller, min_roll, max_roll, exp_roll)
-                else
-                    my_request_pending = false
-                    DRU.HistoryChange("Roll", roller, roll, max_roll, time())
-                end
+            if roller == gs.curr_opp and max_roll == gs.last_roll then -- TODO
+                history_type = "Roll"
+                my_request_pending = false
             end
             
-        elseif in_game and (roller == DRU.me) or (roller == curr_opp) then
+        elseif gs.in_game and (roller == DRU.me) or (roller == gs.curr_opp) then
             local scam, scam_type, exp_roll = scam_checker(min_roll, max_roll, roller)
             if scam then
                 scam_alert(scam_type, roller, min_roll, max_roll, exp_roll)
             else
                 if roll == 1 then
-                    local result = nil
                     if roller == DRU.me then
                         result = "MyLoss"
-                        print("[DRU] You lost!")
+                        print_type = "[DRU] You lost!"
                     else
                         result = "MyWin"
-                        print("[DRU] You won!")
+                        print_type = "[DRU] You won!"
                     end
-                DRU.HistoryChange("EndGame", roller, roll, max_roll, time(), result, target_name)
+                history_type = "EndGame"
                 end_game()
                 else
-                    DRU.HistoryChange("Roll", roller, roll, max_roll, time(), nil, target_name)
+                    history_type = "Roll"
                 end
             end
         end
+    print(print_type)
+    DRU.HistoryChange(history_type, roller, roll, max_roll, time(), result, target_name)
 end)
 
 function start_game(starting_roll, source)
@@ -202,7 +202,7 @@ function start_game(starting_roll, source)
         print("[DRU] Please target a player to start a deathroll, type /drgames to see who wants to roll you.")
         
     else -- player targeted
-        local target_request_pending, time, temp_target, target_roll, target_max_roll = DRU.RequestCheck(target_name)
+        local target_request_pending, time, _, target_roll, target_max_roll = DRU.RequestCheck(target_name)
         
         if (my_request_pending or my_request_sent) and target_request_pending then
             print("[DRU] You both have a roll request pending. Type /drcancel to cancel your roll request.")
@@ -258,14 +258,13 @@ end
 
 -- button functionality
 function button_click()
-    local in_game = DRU.GameCheck()
-    local my_turn = DRU.TurnCheck()
-    if in_game then
+    DRU.GetGameState()
+    if gs.in_game then
         local curr_opp = DRU.GetCurrOpp()
         local _, last_roll = DRU.GetRoll()
-        if my_turn == false then
+        if gs.my_turn == false then
             print("[DRU] It's not your turn.")
-        elseif my_turn == true then
+        elseif gs.my_turn == true then
             textbox:SetText("") -- if we're in game we don't care what the textbox has.
             textbox:ClearFocus()
             do_roll("Roll", curr_opp, last_roll)
@@ -280,12 +279,11 @@ end
 SLASH_DEATHROLL1 = "/dr"
 SLASH_DEATHROLL2 = "/deathroll"
 SlashCmdList["DEATHROLL"] = function(msg) -- msg is whatever player types after cmd
-    local in_game = DRU.GameCheck()
-    local my_turn = DRU.TurnCheck()
-    if in_game then
+    DRU.GetGameState()
+    if gs.in_game then
         local curr_opp = DRU.GetCurrOpp()
         local _, last_roll = DRU.GetRoll()
-        if my_turn == false then
+        if gs.my_turn == false then
             print("[DRU] It's not your turn.")
         else
             if msg ~= "" and tonumber(msg) ~= last_roll then
@@ -339,15 +337,13 @@ function target_check()
 end
 
 -- checks for turns, min and max rolls.
-function scam_checker(min_roll, max_roll, roller)
-    local _, exp_roll = DRU.GetRoll()
-    local my_turn = DRU.TurnCheck()
-    if (my_turn and roller ~= DRU.me) or (not my_turn and roller == DRU.me) then
+function scam_checker(min_roll, max_roll, roller) -- TODO: smart combinations of scams
+    if (gs.my_turn and roller ~= DRU.me) or (not gs.my_turn and roller == DRU.me) then
         return true, "wrong_turn"
     elseif min_roll ~= 1 then
         return true, "wrong_min"
-    elseif max_roll ~= exp_roll then
-        return true, "wrong_max", exp_roll
+    elseif max_roll ~= gs.last_roll and gs.last_roll ~= 1 then
+        return true, "wrong_max", gs.last_roll
     else
         return false
     end
@@ -369,13 +365,11 @@ SLASH_RELOADUI1 = "/rl" -- quick reload
 SlashCmdList.RELOADUI = ReloadUI
 
 SLASH_DEATHROLLCANCEL1 = "/drcancel"
-SlashCmdList["DEATHROLLCANCEL"] = function()
-    local in_game = DRU.GameCheck()
-    local curr_opp = DRU.GetCurrOpp()
+SlashCmdList["DEATHROLLCANCEL"] = function() -- TODO: how to prevent cancel abuse?
     if cancel_confirmation == true then
-        send_addon_data("CancelConfirm", "WHISPER", curr_opp)
+        send_addon_data("CancelConfirm", "WHISPER", gs.curr_opp)
         DRU.HistoryChange("EndGame", nil, nil, nil, nil, "Cancel")
-        print(string.format("[DRU] Deathroll with %s canceled.", curr_opp))
+        print(string.format("[DRU] Deathroll with %s canceled.", gs.curr_opp))
         end_game()
     elseif cancel_lock == true then
         print("[DRU] You can't request to cancel again.")
@@ -384,17 +378,17 @@ SlashCmdList["DEATHROLLCANCEL"] = function()
         if cancel_timer == true then
             print("[DRU] You can't cancel your request yet.")
         else
-            send_addon_data("RemoveRequest", "WHISPER", curr_opp) -- TODO: remove roll from games as well
+            send_addon_data("RemoveRequest", "WHISPER", gs.curr_opp) 
             DRU.HistoryChange("EndGame", nil, nil, nil, nil, "Cancel")
             print("[DRU] Deathroll request canceled.")
             end_game()
         end
         
     else            
-        if in_game then -- if we're midgame they need to agree to for cancellation though
-            send_addon_data("CancelGame", "WHISPER", curr_opp)
+        if gs.in_game then -- if we're midgame they need to agree to for cancellation though
+            send_addon_data("CancelGame", "WHISPER", gs.curr_opp)
             cancel_lock = true
-            print(string.format("[DRU] Cancellation request sent to %s", curr_opp))
+            print(string.format("[DRU] Cancellation request sent to %s", gs.curr_opp))
         else
             print("[DRU] You're not in a deathroll right now.")
         end
@@ -403,16 +397,14 @@ end
 
 SLASH_DEATHROLLCONTINUE1 = "/drcontinue"
 SlashCmdList["DEATHROLLCONTINUE"] = function()
-    local curr_opp = DRU.GetCurrOpp()
-    local in_game = DRU.GameCheck()
-    if not in_game then
+    if not gs.in_game then
         print("[DRU] You're not in a deahtroll right now.")
     else
         if cancel_confirmation == false then
             print("[DRU] There hasn't been a cancellation request.")
         else
             print("[DRU] Cancellation request denied.")
-            send_addon_data("CancelDeny", "WHISPER", curr_opp)
+            send_addon_data("CancelDeny", "WHISPER", gs.curr_opp)
             cancel_confirmation = false
         end
     end
@@ -429,22 +421,16 @@ end
 
 SLASH_DEATHROLLDEBUG1 = "/drd"
 SlashCmdList["DEATHROLLDEBUG"] = function()
-    local curr_opp = DRU.GetCurrOpp()
-    local _, curr_opp_roll = DRU.GetRoll(curr_opp)
-    local last_roller, last_roll, last_max_roll = DRU.GetRoll()
-    local in_game = DRU.GameCheck()
-    local my_turn = DRU.TurnCheck()
-
     print("===== Death Roll Debug =====")
-    print("Last Roller: " .. tostring(last_roller))
-    print("Last Roll: " .. tostring(last_roll))
-    print("Last Max Roll: " .. tostring(last_max_roll))
-    print("In Game: " .. tostring(in_game))
-    print("My Turn: " .. tostring(my_turn))
+    print("Last Roller: " .. tostring(gs.last_roller))
+    print("Last Roll: " .. tostring(gs.last_roll))
+    -- print("Last Max Roll: " .. tostring(last_max_roll))
+    print("In Game: " .. tostring(gs.in_game))
+    print("My Turn: " .. tostring(gs.my_turn))
     print("My Request Sent: " .. tostring(my_request_sent))
     print("My Request Pending: " .. tostring(my_request_pending))
     print("Target Name: " .. tostring(target_name))
-    print("Current Opponent: " .. tostring(curr_opp))
-    print("Current Opponent Roll: " .. tostring(curr_opp_roll))
+    print("Current Opponent: " .. tostring(gs.curr_opp))
+    -- print("Current Opponent Roll: " .. tostring(curr_opp_roll))
     print("=========================")
 end
