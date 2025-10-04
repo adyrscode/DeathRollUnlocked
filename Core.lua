@@ -12,7 +12,6 @@ local target_name = nil
 -- game states
 DRU.gamestate = {in_game = false, curr_game = nil, my_turn = false, curr_opp = nil, last_roller = nil, last_roll = 0}
 local gs = DRU.gamestate
-local my_request_sent = false
 local my_request_pending = false
 local cancel_timer = false -- timer which prevents cancel abuse (TODO)
 local cancel_confirmation = false
@@ -22,6 +21,7 @@ local player_targeted = false
 -- functions
 local target_check -- function to check 2 variables
 local do_roll
+local button_text
 local start_game
 local end_game
 local scam_checker
@@ -40,6 +40,7 @@ addon_loader:SetScript("OnEvent", function(self, event, addon_name)
         DRUDB.games = DRUDB.games or {}
         DRUDB.requests = DRUDB.requests or {}
         DRU.GetGameState()
+        button_text() -- in_game or not in_game?
     end
 end)
 
@@ -78,12 +79,20 @@ parentFrame:SetScript("OnMouseUp", OnDragStop)
 local button = CreateFrame("Button", nil, parentFrame, "UIPanelButtonTemplate")
 button:SetSize(100, 30)
 button:SetPoint("BOTTOM", parentFrame, "CENTER", 0, 0)
-button:SetText("Start Roll!") -- TODO
 button:SetScript("OnMouseDown", OnDragStart) -- button middle mouse button can move the frame
 button:SetScript("OnMouseUp", OnDragStop)
 button:SetScript("OnClick", function(self, button)
     button_click()
 end)
+
+-- button_text is called after we know gamestate
+function button_text()
+    if gs.in_game then
+        button:SetText("Roll!")
+    else
+        button:SetText("Start Roll!")
+    end
+end
 
 -- create the textbox
 local textbox = CreateFrame("EditBox", nil, parentFrame, "InputBoxTemplate")
@@ -118,7 +127,7 @@ channel_listener:SetScript("OnEvent", function(self, event, prefix, message, cha
             print(string.format("[DRU] %s accepts your deathroll!", short_sender))
             
         elseif msg_type == "CancelGame" then
-            print(string.format("[DRU] %s has requested to cancel the deathroll.\nType /drcancel to agree, or keep rolling to deny.", short_sender))
+            print(string.format("[DRU] %s has requested to cancel the deathroll.\nType /drcancel to agree, or /drcontinue to deny.", short_sender))
             cancel_confirmation = true
             
         elseif msg_type == "CancelConfirm" then
@@ -158,18 +167,11 @@ roll_parser:SetScript("OnEvent", function(self, event, msg, sender, ...)
         local max_roll = tonumber(max_roll_str) 
         local min_roll = tonumber(min_roll_str) 
         
-        if my_request_sent and roller == DRU.me then -- sent & pending are different states because reasons
-            my_request_sent = false
-            my_request_pending = true
+        if my_request_pending and roller == DRU.me then -- sent & pending are different states because reasons
+            my_request_pending = false
             player_targeted, target_name = target_check()
             send_addon_data("GameRequest:" .. roll .. ":" .. max_roll, "WHISPER", target_name)
             history_type = "NewGame"
-            
-        elseif my_request_pending then -- TODO: what if they roll 1 instantly?
-            if roller == gs.curr_opp and max_roll == gs.last_roll then -- TODO
-                history_type = "Roll"
-                my_request_pending = false
-            end
             
         elseif gs.in_game and (roller == DRU.me) or (roller == gs.curr_opp) then
             local scam, scam_type, exp_roll = scam_checker(min_roll, max_roll, roller)
@@ -190,6 +192,8 @@ roll_parser:SetScript("OnEvent", function(self, event, msg, sender, ...)
                     history_type = "Roll"
                 end
             end
+        else
+            return
         end
     print(print_type)
     DRU.HistoryChange(history_type, roller, roll, max_roll, time(), result, target_name)
@@ -204,14 +208,14 @@ function start_game(starting_roll, source)
     else -- player targeted
         local target_request_pending, time, _, target_roll, target_max_roll = DRU.RequestCheck(target_name)
         
-        if (my_request_pending or my_request_sent) and target_request_pending then
+        if (my_request_pending or my_request_pending) and target_request_pending then
             print("[DRU] You both have a roll request pending. Type /drcancel to cancel your roll request.")
             if source == "Button" then
                 textbox:SetText("")
                 textbox:ClearFocus()
             end
             
-        elseif my_request_pending or my_request_sent then
+        elseif my_request_pending or my_request_pending then
             print("[DRU] You can't start another deathroll while you have a roll request pending.")
             if source == "Button" then
                 textbox:SetText("")
@@ -301,7 +305,7 @@ end
 function do_roll(type, target_name, roll)
     if type == "Roll" then
     elseif type == "SendRequest" then
-        my_request_sent = true
+        my_request_pending = true
         button:SetText("Roll!")
         print(string.format("[DRU] Deathrolling %s!", target_name))
         
@@ -321,7 +325,6 @@ function do_roll(type, target_name, roll)
 end
 
 function end_game() -- should activate if a game ends; resets globals to default
-    my_request_sent = false
     my_request_pending = false
     cancel_lock = false
     cancel_confirmation = false
@@ -427,7 +430,7 @@ SlashCmdList["DEATHROLLDEBUG"] = function()
     -- print("Last Max Roll: " .. tostring(last_max_roll))
     print("In Game: " .. tostring(gs.in_game))
     print("My Turn: " .. tostring(gs.my_turn))
-    print("My Request Sent: " .. tostring(my_request_sent))
+    print("My Request Sent: " .. tostring(my_request_pending))
     print("My Request Pending: " .. tostring(my_request_pending))
     print("Target Name: " .. tostring(target_name))
     print("Current Opponent: " .. tostring(gs.curr_opp))
