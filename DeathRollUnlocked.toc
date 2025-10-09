@@ -7,4 +7,5 @@
 ## SavedVariables: DRUDB
 
 Core.lua
+GUI.lua
 Database.lua
