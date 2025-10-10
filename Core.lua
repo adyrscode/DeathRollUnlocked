@@ -10,7 +10,7 @@ DRU.me = UnitName("player")
 local target_name = nil
 
 -- game states
-DRU.gamestate = {in_game = false, curr_game = nil, my_turn = false, curr_opp = nil, curr_wager = 0, last_roller = nil, last_roll = 0}
+DRU.gamestate = {in_game = false, curr_game = nil, my_turn = false, curr_opp = nil, my_wager = 0, opp_wager = 0, last_roller = nil, last_roll = 0}
 local gs = DRU.gamestate
 local my_request_pending = false
 local cancel_timer = false -- timer which prevents cancel abuse (TODO)
@@ -26,6 +26,7 @@ local end_game
 local scam_check
 local scam_alert
 local send_addon_data
+local result_check
 
 local addon_loader = CreateFrame("Frame") -- addon loading stuff
 addon_loader:RegisterEvent("ADDON_LOADED")
@@ -51,25 +52,31 @@ channel_listener:SetScript("OnEvent", function(self, event, prefix, message, cha
         local msg_type, opp_roll_str, opp_max_roll_str, opp_wager_str = strsplit(":", message)
         local sender = temp_sender:match("^[^-]+") or temp_sender -- take realm name out
         
+        local opp_max_roll = tonumber(opp_max_roll_str)
+        local opp_roll = tonumber(opp_roll_str)
+        local opp_wager = tonumber(opp_wager_str) -- str will be used for print, opp_wager will be used for data storage
+        opp_wager_str = (tostring(opp_wager).."g")
+
         if msg_type == "GameRequest" then
-            local opp_max_roll = tonumber(opp_max_roll_str)
-            local opp_roll = tonumber(opp_roll_str)
-            local opp_wager = tonumber(opp_wager_str)
-            opp_wager_str = (tostring(opp_wager).."g")
 
             if opp_wager == 0 then 
                 opp_wager_str = "fun" 
             end
 
-            print(string.format("|cffffff00DRU:|r %s wants to deathroll you for %s starting from %d!", sender, opp_wager_str, opp_max_roll))
-            DRU.HistoryChange("NewRequest", sender, opp_roll, opp_max_roll, time(), nil, nil, opp_wager)
-                
+            if opp_roll == 1 then
+                print(string.format("|cffffff00DRU:|r %s wanted to deathroll you for %s starting from %d, but they immediately lost!", sender, opp_wager_str, opp_max_roll))
+                DRU.HistoryChange("FastWin", sender, opp_roll, opp_max_roll, time(), nil, nil, opp_wager)
+            else
+                print(string.format("|cffffff00DRU:|r %s wants to deathroll you for %s starting from %d!", sender, opp_wager_str, opp_max_roll))
+                DRU.HistoryChange("NewRequest", sender, opp_roll, opp_max_roll, time(), nil, nil, opp_wager)
+            end
         elseif msg_type == "RemoveRequest" then -- removes player from requests
             DRU.HistoryChange("RemoveRequest", sender)
             print(string.format("|cffffff00DRU:|r %s canceled their roll.", sender))
             
         elseif msg_type == "AcceptRequest" then -- confirms msg we accept their game
             print(string.format("|cffffff00DRU:|r %s accepts your deathroll!", sender))
+            DRU.AddWager(opp_wager, "Opp")
             
         elseif msg_type == "CancelGame" then -- cancel request receive
             print(string.format("|cffffff00DRU:|r %s has requested to cancel the deathroll.\nType /drcancel to agree, or /drcontinue to deny.", sender))
@@ -104,46 +111,39 @@ roll_parser:SetScript("OnEvent", function(self, event, msg, sender, ...)
     if not msg:find("rolls", 1, true) then return end -- if not roll then discard
         DRU.GetGameState()
     
-        local history_type = nil
-        local print_result = ""
-        local result = nil
+        local history_type = nil -- in what way to add roll to history
+        local print_result = "" -- lose/win prints
+        local result = nil -- added to history
         local roller, roll_str, min_roll_str, max_roll_str = string.match(msg, "^(.-) rolls (%d+) %((%d+)-(%d+)%)$") -- transform from string to information
-        local roll = tonumber(roll_str) -- change roll to number
-        local max_roll = tonumber(max_roll_str) 
+        local roll = tonumber(roll_str)
         local min_roll = tonumber(min_roll_str) 
+        local max_roll = tonumber(max_roll_str) 
         
         if my_request_pending and roller == DRU.me then 
-            send_addon_data("GameRequest:" .. roll .. ":" .. max_roll .. ":" .. gs.curr_wager, "WHISPER", target_name) -- has to be here because it needs to know the roll
-            history_type = "NewGame"
+            send_addon_data("GameRequest:" .. roll .. ":" .. max_roll .. ":" .. gs.my_wager, "WHISPER", target_name) -- has to be here because it needs to know the roll before sending
             player_targeted, target_name = target_check()
+            result, print_result, history_type = result_check(roll, roller)
             my_request_pending = false
             
         elseif gs.in_game and (roller == DRU.me) or (roller == gs.curr_opp) then
             local scam, scam_type, exp_roll = scam_check(min_roll, max_roll, roller)
-            if scam then
+            local roll_index = DRU.GetRollIndex()
+            if scam and roll_index ~= 1 then -- if only 1 roll that means roll hasn't been accepted yet so scam checks don't apply and are not processed anyway
                 scam_alert(scam_type, roller, min_roll, max_roll, exp_roll)
             else
-                if roll == 1 then
-                    if roller == DRU.me then
-                        result = "Loss"
-                        print_result = "|cffffff00DRU:|r You lost!"
-                    else
-                        result = "Win"
-                        print_result = "|cffffff00DRU:|r You won!"
-                    end
-                history_type = "EndGame"
-                end_game()
-                else
-                    history_type = "Roll"
-                end
+                result, print_result, history_type = result_check(roll, roller)
             end
         else
             return
         end
+
     print(print_result)
-    DRU.HistoryChange(history_type, roller, roll, max_roll, time(), result, target_name, gs.curr_wager)
+    DRU.HistoryChange(history_type, roller, roll, max_roll, time(), result, target_name, gs.my_wager) -- we only ever need to pass my wager here i think
     if result == nil then DRU.GetGameState() else end
     DRU.button_update(gs.in_game, gs.my_turn)
+    if history_type == "FastLoss" or history_type == "EndGame" then
+        end_game()
+    end
 end)
 
 function start_game(starting_roll, wager, source)
@@ -153,10 +153,10 @@ function start_game(starting_roll, wager, source)
         print("|cffffff00DRU:|r Please target a player to start a deathroll, type /drgames to see who wants to roll you.")
         
     else -- player targeted
-        local target_request_pending, time, _, target_roll, target_max_roll = DRU.RequestCheck(target_name)
+        local target_request_pending, _, _, target_roll, _, target_wager = DRU.RequestCheck(target_name)
         
         if my_request_pending and target_request_pending then
-            print("|cffffff00DRU:|r You both have a roll request pending. Type /drcancel to cancel your roll request.")
+            print("|cffffff00DRU:|r Somehow, you both have a roll request pending. Type /drcancel to cancel your roll request.")
             if source == "Button" then
                 DRU.textbox:SetText("")
                 DRU.textbox:ClearFocus()
@@ -169,11 +169,25 @@ function start_game(starting_roll, wager, source)
                 DRU.textbox:ClearFocus()
             end
             
-        elseif target_request_pending then -- TODO: roll is the same but wager is different: popup "wagers are not equal"?
+        elseif target_request_pending then
             if starting_roll == 0 or starting_roll == target_roll then
-                do_roll("AcceptRequest", target_name, target_roll)
-                DRU.HistoryChange("MoveRequest", target_name) -- only need to pass player argument to know who's request to move
-                DRU.HistoryChange("RemoveRequest", target_name)
+                if wager < target_wager and wager ~= 0 then -- TODO: ask opponent if they agree to uneven bet
+                    print("|cffffff00DRU:|r You can't bet less than your opponent. Please try again.")
+                    return
+                elseif wager == 0 then -- TODO: add consent
+                    wager = target_wager
+                    do_roll("AcceptRequest", target_name, target_roll, wager)
+                    DRU.HistoryChange("MoveRequest", target_name) -- only need to pass player argument to know who's request to move
+                    DRU.HistoryChange("RemoveRequest", target_name)
+                    DRU.AddWager(wager, "Me")
+                elseif wager > target_wager then
+                    print(string.format("|cffffff00DRU:|r You are betting %dg against %s's %dg!", wager, target_name, target_wager))
+                    do_roll("AcceptRequest", target_name, target_roll, wager)
+                    DRU.HistoryChange("MoveRequest", target_name) -- only need to pass player argument to know who's request to move
+                    DRU.HistoryChange("RemoveRequest", target_name)
+                    DRU.AddWager(wager, "Me")
+                end
+
             else
                 print(string.format("|cffffff00DRU:|r %s already has a roll request pending. Type /dr to roll their %d.", target_name, target_roll))
                 if source == "Button" then
@@ -204,7 +218,7 @@ function start_game(starting_roll, wager, source)
                     print("|cffffff00DRU:|r Please enter a valid wager.")
 
                 else
-                    DRU.gamestate.curr_wager = wager
+                    DRU.gamestate.my_wager = wager
                     do_roll("SendRequest", target_name, starting_roll)
                     if source == "Button" then
                         DRU.textbox:SetText("")
@@ -268,7 +282,7 @@ SlashCmdList["DEATHROLL"] = function(msg) -- msg is whatever player types after 
     end
 end
 
-function do_roll(type, target_name, roll)
+function do_roll(type, target_name, roll, wager)
     if type == "Roll" then
     elseif type == "SendRequest" then
         my_request_pending = true
@@ -276,7 +290,7 @@ function do_roll(type, target_name, roll)
         print(string.format("|cffffff00DRU:|r Deathrolling %s!", target_name))
         
     elseif type == "AcceptRequest" then
-        send_addon_data("AcceptRequest", "WHISPER", target_name)
+        send_addon_data(string.format("AcceptRequest:nil:nil:"..wager), "WHISPER", target_name)
         DRU.button_update(gs.in_game, gs.my_turn)
         print(string.format("|cffffff00DRU:|r Deathrolling %s!", target_name))
     end
@@ -288,6 +302,23 @@ function do_roll(type, target_name, roll)
     end
     ChatFrame1EditBox:SetText(string.format("/roll %d", roll))
     ChatEdit_SendText(ChatFrame1EditBox)  
+end
+
+function result_check(roll, roller)
+    if roll == 1 then
+        if my_request_pending and roller == DRU.me then
+            return "Loss", "|cffffff00DRU:|r You lost immediately!", "FastLoss"
+        elseif roller == DRU.me then
+            return "Loss", "|cffffff00DRU:|r You lost!", "EndGame"
+        else
+            return "Win", "|cffffff00DRU:|r You won!", "EndGame"
+        end
+
+    elseif my_request_pending then
+        return nil, "", "NewGame"
+    else
+        return nil, "", "Roll"
+    end
 end
 
 function end_game() -- should activate if a game ends; resets globals to default
@@ -388,18 +419,17 @@ end
 
 SLASH_DEATHROLLDEBUG1 = "/drd"
 SlashCmdList["DEATHROLLDEBUG"] = function()
-    local target_request_pending, time, _, target_roll, target_max_roll = DRU.RequestCheck("Gamblinglove")
-    print(target_request_pending, time, _, target_roll, target_max_roll)
     print("===== Death Roll Debug =====")
     print("Last Roller: " .. tostring(gs.last_roller))
     print("Last Roll: " .. tostring(gs.last_roll))
     -- print("Last Max Roll: " .. tostring(last_max_roll))
     print("In Game: " .. tostring(gs.in_game))
     print("My Turn: " .. tostring(gs.my_turn))
-    print("Current Wager: " .. tostring(gs.curr_wager))
+    print("My Wager: " .. tostring(gs.my_wager))
+    print("Opp Wager: " .. tostring(gs.opp_wager))
     print("My Request Pending: " .. tostring(my_request_pending))
     print("Target Name: " .. tostring(target_name))
-    print("Target Request pending: ".. tostring(target_request_pending))
+    -- print("Target Request pending: ".. tostring(target_request_pending))
     print("Current Opponent: " .. tostring(gs.curr_opp))
     -- print("Current Opponent Roll: " .. tostring(curr_opp_roll))
     print("=========================")

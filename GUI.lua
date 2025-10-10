@@ -21,7 +21,7 @@ titleBar:SetPoint("TOPLEFT", DRU.menu, "TOPLEFT")
 titleBar:SetHeight(24)
 titleBar:SetColorTexture(0.1, 0.1, 0.13, 0.95)
 DRU.menu.title = DRU.menu:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-DRU.menu.title:SetPoint("LEFT", titleBar, "LEFT", 8, 0)
+DRU.menu.title:SetPoint("LEFT", titleBar, "LEFT", 0, 0)
 DRU.menu.title:SetText("Deathroll Unlocked")
 
 -- close button
@@ -178,7 +178,7 @@ function DRU.button_update(in_game, my_turn)
 end
 
 -- create the textbox
-DRU.textbox = CreateFrame("EditBox", nil, parentFrame, "InputBoxTemplate")
+DRU.textbox = CreateFrame("EditBox", nil, parentFrame, "InputBoxTemplate") -- TODO: change to 2 textboxes, 1 for roll and 1 for wager
 local textbox = DRU.textbox
 textbox:SetSize(94, 30)                 
 textbox:SetPoint("CENTER", parentFrame, "CENTER", 3, -8)
