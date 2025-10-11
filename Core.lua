@@ -375,8 +375,8 @@ SlashCmdList["DEATHROLLCANCEL"] = function() -- TODO: how to prevent cancel abus
 
     if cancel_confirmation then
         send_addon_data("CancelConfirm", "WHISPER", gs.curr_opp)
-        DRU.HistoryChange("EndGame", nil, nil, nil, nil, "Cancel")
         print(string.format("|cffffff00DRU:|r Deathroll with %s canceled.", gs.curr_opp))
+        DRU.HistoryChange("EndGame", nil, nil, nil, nil, "Cancel")
         end_game()
     elseif cancel_lock then
         print("|cffffff00DRU:|r You can't request to cancel again.")
