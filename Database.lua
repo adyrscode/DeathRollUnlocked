@@ -1,4 +1,15 @@
+DeathRollUnlocked = DeathRollUnlocked or {}
 local DRU = DeathRollUnlocked
+
+function DRU.DB_Init()
+    if not DRUDB or (DRUDB == nil) or (type(DRUDB) ~= "table") then
+        DRUDB = {}
+    end
+    DRUDB.global_stats = DRUDB.global_stats or 
+    {total_wins = 0, total_losses = 0, total_gold = 0, worst_roll = 0, longest_streak = 0}
+    DRUDB.games = DRUDB.games or {}
+    DRUDB.requests = DRUDB.requests or {}
+end
 
 function DRU.GetGameState()
     DRUDB.games = DRUDB.games or {}
@@ -41,7 +52,7 @@ function DRU.HistoryChange(type, player, roll, max_roll, time, result, opp, wage
         return
         
     elseif type == "NewRequest" then -- always from another player
-        DRUDB.requests[player] = {info = {opp = player, result = nil, my_wager = nil, opp_wager = wager}, rolls = {{time, player, roll, max_roll}}} -- EXTRA BRACKETS NESSECARY FOR EZ DATA TRANSFER!!!
+        DRUDB.requests[player] = {info = {opp = player, result = nil, my_wager = 0, opp_wager = wager}, rolls = {{time, player, roll, max_roll}}} -- EXTRA BRACKETS NESSECARY FOR EZ DATA TRANSFER!!!
     
     elseif type == "MoveRequest" then
         table.insert(DRUDB.games, DRUDB.requests[player])
@@ -50,7 +61,7 @@ function DRU.HistoryChange(type, player, roll, max_roll, time, result, opp, wage
         DRUDB.requests[player] = nil
 
     elseif type == "NewGame" then -- always started by us
-        table.insert(DRUDB.games, {info = {opp = opp, result = nil, my_wager = wager, opp_wager = nil}, rolls = {{time, player, roll, max_roll}}})
+        table.insert(DRUDB.games, {info = {opp = opp, result = nil, my_wager = wager, opp_wager = 0}, rolls = {{time, player, roll, max_roll}}})
 
     elseif type == "Roll" then
         if curr_game == nil then
@@ -67,15 +78,17 @@ function DRU.HistoryChange(type, player, roll, max_roll, time, result, opp, wage
             DRUDB.global_stats["total_gold"] = DRUDB.global_stats["total_gold"] - DRUDB.games[#DRUDB.games].info.my_wager 
             DRUDB.games[#DRUDB.games].info.result = "Loss"
             DRU.GetGameState()
+            DRU.UpdateStats()
 
     elseif type == "FastWin" then -- special case for when someone rolls us and immediately rolls 1
         if DRUDB.global_stats.total_gold == nil then DRUDB.global_stats.total_gold = 0 end -- TODO: what if our opponent is already in the middle of a deathroll?
-        table.insert(DRUDB.games, {info = {opp = opp, result = "Win", wager = wager}, rolls = {{time, player, roll, max_roll}}})
+        table.insert(DRUDB.games, {info = {opp = opp, result = "Win", opp_wager = wager}, rolls = {{time, player, roll, max_roll}}})
         if DRUDB.global_stats.total_losses == nil then DRUDB.global_stats.total_losses = 0 end
             DRUDB.global_stats["total_wins"] = DRUDB.global_stats["total_wins"] + 1
             DRUDB.global_stats["total_gold"] = DRUDB.global_stats["total_gold"] + DRUDB.games[#DRUDB.games].info.opp_wager 
             DRUDB.games[#DRUDB.games].info.result = "Win"
             DRU.GetGameState()
+            DRU.UpdateStats()
 
     elseif type == "EndGame" then
         if DRUDB.global_stats.total_gold == nil then DRUDB.global_stats.total_gold = 0 end
@@ -99,10 +112,11 @@ function DRU.HistoryChange(type, player, roll, max_roll, time, result, opp, wage
         end
         table.insert(curr_game.rolls, {time, player, roll, max_roll}) -- if it's ending the game we always add the roll
         DRU.GetGameState() -- when a game ends we need to update gamestate
+        DRU.UpdateStats() -- this is for gui. TODO: make clear in the function that it's gui related
     end
 end
 
-function DRU.RequestCheck(target_name) -- checks if target selected is in request list, and gives back all bool, time, player, roll, maxroll
+function DRU.RequestCheck(target_name) -- checks if target selected is in request list, and gives back all bool, time, player, roll, maxroll, wager
     if not DRUDB.requests or next(DRUDB.requests) == nil then
         return false, 0, nil, 0, 0, 0
     else 
@@ -183,16 +197,73 @@ end
 
 function DRU.GetCurrOpp() -- returns curr_opp
     local curr_game = DRUDB.games[#DRUDB.games]
-    if curr_game == nil then
+    if curr_game == nil then 
         return nil
+
     else
-        local curr_opp = curr_game.info.opp
-        return curr_opp
+        local last_roll = curr_game.rolls[#curr_game.rolls][3]
+        if last_roll ~= 1 then
+            local curr_opp = curr_game.info.opp
+            return curr_opp
+        else
+            return nil
+        end
     end
 end
 
 function DRU.GetLastGame() -- returns most recent game, ongoing or not
     return DRUDB.games[#DRUDB.games]
+end
+
+function DRU.GetStats() -- returns all stats for the GUI
+    DRUDB.global_stats = DRUDB.global_stats or {}
+    local wins = DRUDB.global_stats["total_wins"]
+    local losses = DRUDB.global_stats["total_losses"]
+    local total = wins + losses
+    local gold = DRUDB.global_stats["total_gold"]
+    local worst_roll = DRUDB.global_stats["worst_roll"]
+    local win_rate_str = ""
+    local streak = DRUDB.global_stats["longest_streak"]
+    
+    if total > 0 then
+        win_rate_str = string.format("%.2f%%", (wins / (wins + losses) * 100))
+    else
+        win_rate_str = "None"
+    end
+    
+    if worst_roll == 0 then -- this is kinda ass but ok
+        worst_roll = "None"
+    else
+        local temp_roll = worst_roll
+        worst_roll = string.format("You rolled 1 out of %d.", temp_roll, temp_roll)
+    end
+
+    return total, win_rate_str, wins, losses, gold, worst_roll, streak
+end
+
+function DRU.StreakCheck() -- sees if there's a streak of 2 rolls
+    local last_game = DRUDB.games[#DRUDB.games]
+    if not last_game then return end
+    
+    local streak = 0
+    for _, roll in ipairs(last_game.rolls) do
+        if roll[3] == 2 then
+            streak = streak + 1
+        end
+    end
+    if streak > DRUDB.global_stats["longest_streak"] then
+        DRUDB.global_stats["longest_streak"] = streak
+    end
+end
+
+function DRU.LuckCheck(roll, max_roll, roller) -- checks if roll is the unluckiest roll ever
+    if roller == DRU.me then
+        if roll == 1 then
+            if max_roll > DRUDB.global_stats["worst_roll"] then
+                DRUDB.global_stats["worst_roll"] = max_roll
+            end
+        end
+    end
 end
 
 SLASH_DEATHROLLGAMES1 = "/drgame" -- TODO: ADD DISPLAY WAGERS
@@ -215,6 +286,7 @@ SlashCmdList["DEATHROLLCLEAR"] = function()
     table.wipe(DRUDB.games)
     DRUDB.global_stats["total_wins"] = 0
     DRUDB.global_stats["total_losses"] = 0
+    DRUDB.global_stats["total_gold"] = 0
     print("|cffffff00DRU:|r Game history cleared.")
 end
 

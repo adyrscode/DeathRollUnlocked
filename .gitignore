@@ -4,6 +4,7 @@
 # But not these files
 !.gitignore
 !Core.lua
+!Settings.lua
 !GUI.lua
 !Database.lua
 !DeathRollUnlocked.toc

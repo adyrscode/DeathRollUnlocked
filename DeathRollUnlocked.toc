@@ -1,11 +1,12 @@
-## Interface: 110005
-## Title: |cFFFF0000DeathRoll Unlocked|r
+## Interface: 120001
+## Title: DeathRoll Unlocked
 ## Version: 0.1
-## Notes: Gambling
-## Author: Adyr & Queuebee
+## Notes: Gambling!
+## Author: Adyr
 ## DefaultState: enabled
 ## SavedVariables: DRUDB
 
-Core.lua
-GUI.lua
 Database.lua
+Core.lua
+Settings.lua
+GUI.lua
