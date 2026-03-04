@@ -368,10 +368,7 @@ function scam_alert(scam_type, scammer, min_roll, max_roll, exp_roll)
 end
 
 -- COMMANDS
-SLASH_DEATHROLLTRY1 = "/drtry" -- dev tool
-SlashCmdList["DEATHROLLTRY"] = function()
-    return
-end
+
 
 SLASH_DEATHROLL1 = "/dr"
 SLASH_DEATHROLL2 = "/deathroll"

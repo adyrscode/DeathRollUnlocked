@@ -67,32 +67,33 @@ contentArea:SetPoint("BOTTOMRIGHT", DRU.menu, "BOTTOMRIGHT", -12, 12)
 local tabs = {}
 local tabFrames = {}
 
-local function makeTab(name)
-  local b = CreateFrame("Button", nil, DRU.menu)
-  b:SetSize(84, 22)
-  if #tabs == 0 then
-    b:SetPoint("TOPLEFT", DRU.menu, "TOPLEFT", 12, -28) -- first tab
-  else
-    b:SetPoint("LEFT", tabs[#tabs], "RIGHT", 6, 0)      -- auto-space next to previous
-    b:SetPoint("TOP", tabs[#tabs], "TOP", 0, 0)
-  end
-  b.text = b:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-  b.text:SetPoint("CENTER")
-  b.text:SetText(name)
-  b.text:SetFontObject("GameFontNormal")
-  local font, _, flags = b.text:GetFont()
-  b.text:SetFont(font, 12, flags)
+local function make_tab(name) -- this is done by chatGPT i hate UI programming
+    local b = CreateFrame("Button", nil, DRU.menu)
+    b:SetSize(84, 22)
+    if #tabs == 0 then
+        b:SetPoint("TOPLEFT", DRU.menu, "TOPLEFT", 12, -28) -- first tab
+    else
+        b:SetPoint("LEFT", tabs[#tabs], "RIGHT", 6, 0)      -- auto-space next to previous
+        b:SetPoint("TOP", tabs[#tabs], "TOP", 0, 0)
+    end
 
-  b.bg = b:CreateTexture(nil, "BACKGROUND")
-  b.bg:SetAllPoints(b)
-  b.bg:SetColorTexture(0.08, 0.08, 0.09, 0.95)
+    b.text = b:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    b.text:SetPoint("CENTER")
+    b.text:SetText(name)
+    b.text:SetFontObject("GameFontNormal")
+    local font, _, flags = b.text:GetFont()
+    b.text:SetFont(font, 12, flags)
 
-  b:SetScript("OnEnter", function(self) self.bg:SetColorTexture(0.18,0.18,0.20,1) end)
-  b:SetScript("OnLeave", function(self)
+    b.bg = b:CreateTexture(nil, "BACKGROUND")
+    b.bg:SetAllPoints(b)
+    b.bg:SetColorTexture(0.08, 0.08, 0.09, 0.95)
+
+    b:SetScript("OnEnter", function(self) self.bg:SetColorTexture(0.18,0.18,0.20,1) end)
+    b:SetScript("OnLeave", function(self)
     if self.active then self.bg:SetColorTexture(0.22,0.22,0.25,1) else self.bg:SetColorTexture(0.08,0.08,0.09,0.95) end
-  end)
+    end)
 
-  return b
+    return b
 end
 
 -- History
@@ -104,16 +105,24 @@ tabFrames[1].text:SetJustifyH("LEFT")
 tabFrames[1].text:SetJustifyV("TOP")
 tabFrames[1].text:SetText("")
 
-local search_box = CreateFrame("EditBox", nil, tabFrames[1], "InputBoxTemplate")
-search_box:SetSize(150, 30)                 
-search_box:SetPoint("TOPLEFT", tabFrames[1], "TOPLEFT", 10, 0)
+local match_history_frame = CreateFrame("Frame", nil, tabFrames[1]) -- parent of the match history list view
+match_history_frame:SetPoint("TOPLEFT", tabFrames[1], "TOPLEFT", 7, 0)
+match_history_frame:SetSize(263, 210)
+
+-- local bg = match_history_frame:CreateTexture(nil, "BACKGROUND") -- this is if u want to see the area of the match_history_frame
+-- bg:SetAllPoints(match_history_frame)
+-- bg:SetColorTexture(1, 0, 0, 0.5)
+
+local search_box = CreateFrame("EditBox", nil, match_history_frame, "InputBoxTemplate") -- search bar
+search_box:SetSize(150, 30)
+search_box:SetPoint("TOPLEFT", match_history_frame, "TOPLEFT", 4, 0)
 search_box:SetAutoFocus(false)
 search_box:SetScript("OnEnterPressed", function(self) -- if enter is pressed, search:
 end)
 
-local sample_text = search_box:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+local sample_text = search_box:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall") -- hint text for search bar
 sample_text:SetPoint("LEFT", search_box, "LEFT")
-sample_text:SetText("Enter opponent's name")       -- this is the greyed-out placeholder text
+sample_text:SetText("Enter opponent's name")
 sample_text:SetTextColor(0.6, 0.6, 0.6)
 search_box:SetScript("OnEditFocusGained", function(self)
     sample_text:Hide()
@@ -125,6 +134,45 @@ search_box:SetScript("OnEditFocusLost", function(self)
     end
 end)
 
+local function make_game_item(id, opp, result, gold, y_pos)
+    local game = CreateFrame("Button", nil, match_history_frame)
+    game:SetPoint("TOPLEFT", match_history_frame, "TOPLEFT", 0, y_pos)
+    game:SetSize(263, 20)
+
+    game.text = game:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    game.text:SetPoint("LEFT")
+    game.text:SetText(tostring(gold) .." " .. opp .. " ")
+
+    game.bg = game:CreateTexture(nil, "BACKGROUND")
+    game.bg:SetAllPoints(game)
+    if result == "Win" then
+        game.bg:SetColorTexture(0.1, 0.6, 0.1, 0.60)
+    else
+        game.bg:SetColorTexture(0.6, 0.1, 0.1, 0.60)
+    end
+end
+
+local function make_game_page() -- decides where the next game should be generated in the ui
+    local games = DRU.GetMatchHistoryPage(0)
+    local y_pos = -28
+
+    for i, game in ipairs(games) do
+        local id, opp, result, gold = unpack(game)
+        if i ~= 1 then y_pos = y_pos - 23 end
+
+        make_game_item(id, opp, result, gold, y_pos)
+
+        print(i)
+    end
+end
+
+SLASH_DEATHROLLTRY1 = "/drtry" -- dev tool
+SlashCmdList["DEATHROLLTRY"] = function()
+    make_game_page()
+end
+
+local game_details_frame = CreateFrame("Frame", nil, tabFrames[1]) -- parent of game details view
+game_details_frame:Hide()
 
 -- Statistics
 tabFrames[2] = CreateFrame("Frame", nil, contentArea)
@@ -153,9 +201,9 @@ tabFrames[3].text:SetText(finance_text)
 tabFrames[3]:Hide()
 
 -- create tab buttons
-tabs[1] = makeTab("History")
-tabs[2] = makeTab("Statistics")
-tabs[3] = makeTab("Finances")
+tabs[1] = make_tab("History")
+tabs[2] = make_tab("Statistics")
+tabs[3] = make_tab("Finances")
 
 local function SetTab(id)
   for i, b in ipairs(tabs) do

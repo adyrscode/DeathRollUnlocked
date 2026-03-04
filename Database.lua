@@ -52,7 +52,7 @@ function DRU.HistoryChange(type, player, roll, max_roll, time, result, opp, wage
         return
         
     elseif type == "NewRequest" then -- always from another player
-        DRUDB.requests[player] = {info = {opp = player, result = nil, my_wager = 0, opp_wager = wager}, rolls = {{time, player, roll, max_roll}}} -- EXTRA BRACKETS NESSECARY FOR EZ DATA TRANSFER!!!
+        DRUDB.requests[player] = {info = {opp = player, result = nil, my_wager = 0, opp_wager = wager, id = DRU.GenerateGameID()}, rolls = {{time, player, roll, max_roll}}} -- EXTRA BRACKETS NESSECARY FOR EZ DATA TRANSFER!!!
     
     elseif type == "MoveRequest" then
         table.insert(DRUDB.games, DRUDB.requests[player])
@@ -61,7 +61,7 @@ function DRU.HistoryChange(type, player, roll, max_roll, time, result, opp, wage
         DRUDB.requests[player] = nil
 
     elseif type == "NewGame" then -- always started by us
-        table.insert(DRUDB.games, {info = {opp = opp, result = nil, my_wager = wager, opp_wager = 0}, rolls = {{time, player, roll, max_roll}}})
+        table.insert(DRUDB.games, {info = {opp = opp, result = nil, my_wager = wager, opp_wager = 0, id = DRU.GenerateGameID()}, rolls = {{time, player, roll, max_roll}}})
 
     elseif type == "Roll" then
         if curr_game == nil then
@@ -72,7 +72,7 @@ function DRU.HistoryChange(type, player, roll, max_roll, time, result, opp, wage
 
     elseif type == "FastLoss" then -- special case for when our very first roll is immediately 1: otherwise the roll is added twice, because we have to start and end game.
         if DRUDB.global_stats.total_gold == nil then DRUDB.global_stats.total_gold = 0 end
-        table.insert(DRUDB.games, {info = {opp = opp, result = "Loss", my_wager = wager}, rolls = {{time, player, roll, max_roll}}})
+        table.insert(DRUDB.games, {info = {opp = opp, result = "Loss", my_wager = wager, id = DRU.GenerateGameID()}, rolls = {{time, player, roll, max_roll}}})
         if DRUDB.global_stats.total_losses == nil then DRUDB.global_stats.total_losses = 0 end
             DRUDB.global_stats["total_losses"] = DRUDB.global_stats["total_losses"] + 1
             DRUDB.global_stats["total_gold"] = DRUDB.global_stats["total_gold"] - DRUDB.games[#DRUDB.games].info.my_wager 
@@ -82,7 +82,7 @@ function DRU.HistoryChange(type, player, roll, max_roll, time, result, opp, wage
 
     elseif type == "FastWin" then -- special case for when someone rolls us and immediately rolls 1
         if DRUDB.global_stats.total_gold == nil then DRUDB.global_stats.total_gold = 0 end -- TODO: what if our opponent is already in the middle of a deathroll?
-        table.insert(DRUDB.games, {info = {opp = opp, result = "Win", opp_wager = wager}, rolls = {{time, player, roll, max_roll}}})
+        table.insert(DRUDB.games, {info = {opp = opp, result = "Win", opp_wager = wager, id = DRU.GenerateGameID()}, rolls = {{time, player, roll, max_roll}}})
         if DRUDB.global_stats.total_losses == nil then DRUDB.global_stats.total_losses = 0 end
             DRUDB.global_stats["total_wins"] = DRUDB.global_stats["total_wins"] + 1
             DRUDB.global_stats["total_gold"] = DRUDB.global_stats["total_gold"] + DRUDB.games[#DRUDB.games].info.opp_wager 
@@ -195,6 +195,36 @@ function DRU.GetRoll(player) -- returns roller, roll, max_roll
     end
 end
 
+function DRU.GetMatchHistoryPage(page_num)
+    local page_len = 5
+    local page_start = #DRUDB.games - (page_num * page_len) -- am i secretly a math genius?
+    local page_end = page_start - page_len
+    if page_end < 1 then page_end = 1 end
+    local my_games = {}
+
+    -- for <var> = <start>, <end>, <step> do | numeric for loop to get me the indexes of recent games
+    -- backwards numeric loop to go through our game history in reverse so we can return an ordered table
+    for i = page_start, page_end, -1 do
+        local id = DRUDB.games[i].info.id
+        local opp = DRUDB.games[i].info.opp
+        local result = DRUDB.games[i].info.result
+        local gold_str = ""
+
+        if result == "Win" then
+            gold_str = string.concat("+", DRUDB.games[i].info.opp_wager, "g")
+        else
+            gold_str = string.concat(tostring(-DRUDB.games[i].info.my_wager), "g")
+        end
+
+        table.insert(my_games, {id, opp, result, gold_str})
+    end
+
+    return my_games
+end
+
+function DRU.GetGameByID(id)
+end
+
 function DRU.GetCurrOpp() -- returns curr_opp
     local curr_game = DRUDB.games[#DRUDB.games]
     if curr_game == nil then 
@@ -264,6 +294,10 @@ function DRU.LuckCheck(roll, max_roll, roller) -- checks if roll is the unluckie
             end
         end
     end
+end
+
+function DRU.GenerateGameID()
+    return DRUDB.global_stats["total_wins"] + DRUDB.global_stats["total_losses"] + 1
 end
 
 SLASH_DEATHROLLGAMES1 = "/drgame" -- TODO: ADD DISPLAY WAGERS
