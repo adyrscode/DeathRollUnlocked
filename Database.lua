@@ -195,8 +195,8 @@ function DRU.GetRoll(player) -- returns roller, roll, max_roll
     end
 end
 
-function DRU.GetMatchHistoryPage(page_num)
-    local page_len = 5
+function DRU.GetMatchHistoryPage(page_num, page_len)
+    -- off by 1: page_len is always 1 lower than the actual page length
     local page_start = #DRUDB.games - (page_num * page_len) -- am i secretly a math genius?
     local page_end = page_start - page_len
     if page_end < 1 then page_end = 1 end
@@ -223,6 +223,12 @@ function DRU.GetMatchHistoryPage(page_num)
 end
 
 function DRU.GetGameByID(id)
+    local game = DRUDB.games[id]
+    return game
+end
+
+function DRU.GetTotalGameAmount()
+    return #DRUDB.games
 end
 
 function DRU.GetCurrOpp() -- returns curr_opp

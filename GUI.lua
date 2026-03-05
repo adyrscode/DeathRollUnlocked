@@ -1,6 +1,21 @@
 DeathRollUnlocked = DeathRollUnlocked or {}
 local DRU = DeathRollUnlocked
 
+-- constants
+local PAGE_LEN = 7 -- amount of games displayed per page in match history - 1.
+local TOP_GAME_POS = -28 -- the y_pos of the top game of the page
+local COLORS = {WIN = {normal = {0.1, 0.6, 0.1, 0.60}, hover = {0.2, 0.85, 0.2, 0.75}}, 
+                LOSS = {normal = {0.6, 0.1, 0.1, 0.60}, hover = {0.85, 0.2, 0.2, 0.75}}}
+
+-- functions
+local make_page
+local edit_page
+local init_hist_entry
+local edit_hist_entry
+local update_page_info
+local arrow
+local disable_arrow
+
 -- text
 local stats_text = [[
 Total Games Played: %d
@@ -16,14 +31,18 @@ local finance_text = [[
 Work in Progress :)
 ]]
 
-function DRU.UI_Init(in_game, my_turn) -- anything which needs DRUDB should be listed as a function here.
+-- anything which needs DRUDB should be listed as a function here.
+function DRU.UI_Init(in_game, my_turn)
     DRU.UpdateStats()
     DRU.button_update(in_game, my_turn)
+    make_page()
+    edit_page(0) -- load the 0th page
+    update_page_info()
 end
 
 -- menu window
 DRU.menu = CreateFrame("Frame", "MyAddonFrame", UIParent)
-DRU.menu:SetSize(290, 260)
+DRU.menu:SetSize(290, 300)
 DRU.menu:SetPoint("CENTER")
 DRU.menu:EnableMouse(true)
 DRU.menu:SetMovable(true)
@@ -96,6 +115,8 @@ local function make_tab(name) -- this is done by chatGPT i hate UI programming
     return b
 end
 
+
+
 -- History
 tabFrames[1] = CreateFrame("Frame", nil, contentArea)
 tabFrames[1]:SetAllPoints(contentArea)
@@ -105,74 +126,159 @@ tabFrames[1].text:SetJustifyH("LEFT")
 tabFrames[1].text:SetJustifyV("TOP")
 tabFrames[1].text:SetText("")
 
-local match_history_frame = CreateFrame("Frame", nil, tabFrames[1]) -- parent of the match history list view
-match_history_frame:SetPoint("TOPLEFT", tabFrames[1], "TOPLEFT", 7, 0)
-match_history_frame:SetSize(263, 210)
+local match_hist = CreateFrame("Frame", nil, tabFrames[1]) -- parent of the match history list view
+match_hist:SetPoint("TOPLEFT", tabFrames[1], "TOPLEFT", 7, 0)
+match_hist:SetSize(263, 240)
+match_hist.page_num = 0
 
--- local bg = match_history_frame:CreateTexture(nil, "BACKGROUND") -- this is if u want to see the area of the match_history_frame
+function DRU.UpdateMatchHistory()
+    
+end
+
+-- this is if u want to see the area of the match_history_frame
+-- local bg = match_history_frame:CreateTexture(nil, "BACKGROUND")
 -- bg:SetAllPoints(match_history_frame)
 -- bg:SetColorTexture(1, 0, 0, 0.5)
 
-local search_box = CreateFrame("EditBox", nil, match_history_frame, "InputBoxTemplate") -- search bar
-search_box:SetSize(150, 30)
-search_box:SetPoint("TOPLEFT", match_history_frame, "TOPLEFT", 4, 0)
-search_box:SetAutoFocus(false)
-search_box:SetScript("OnEnterPressed", function(self) -- if enter is pressed, search:
-end)
+-- arrows & page number
+match_hist.left_arr = CreateFrame("Button", nil, match_hist, "UIPanelButtonTemplate")
+match_hist.left_arr:SetPoint("BOTTOMLEFT")
+match_hist.left_arr:SetSize(28, 28)
+match_hist.left_arr:SetNormalTexture("Interface\\Buttons\\UI-SpellbookIcon-PrevPage-Up")
+match_hist.left_arr:SetScript("OnClick", function() arrow(-1) end)
 
-local sample_text = search_box:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall") -- hint text for search bar
-sample_text:SetPoint("LEFT", search_box, "LEFT")
-sample_text:SetText("Enter opponent's name")
-sample_text:SetTextColor(0.6, 0.6, 0.6)
-search_box:SetScript("OnEditFocusGained", function(self)
-    sample_text:Hide()
-end)
-search_box:SetScript("OnEditFocusLost", function(self)
-    local text = search_box:GetText()
-    if text == "" then
-        sample_text:Show()
-    end
-end)
+match_hist.right_arr = CreateFrame("Button", nil, match_hist, "UIPanelButtonTemplate")
+match_hist.right_arr:SetPoint("BOTTOMRIGHT")
+match_hist.right_arr:SetSize(28, 28)
+match_hist.right_arr:SetNormalTexture("Interface\\Buttons\\UI-SpellbookIcon-NextPage-Up")
+match_hist.right_arr:SetScript("OnClick",function() arrow(1) end)
 
-local function make_game_item(id, opp, result, gold, y_pos)
-    local game = CreateFrame("Button", nil, match_history_frame)
-    game:SetPoint("TOPLEFT", match_history_frame, "TOPLEFT", 0, y_pos)
-    game:SetSize(263, 20)
+function arrow(dir)
+    match_hist.page_num = match_hist.page_num + dir
+    edit_page(match_hist.page_num)
+    update_page_info()
+end
 
-    game.text = game:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    game.text:SetPoint("LEFT")
-    game.text:SetText(tostring(gold) .." " .. opp .. " ")
+match_hist.page_num_display = match_hist:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+match_hist.page_num_display:SetScale(1.5)
+match_hist.page_num_display:SetPoint("BOTTOM", 0, 4)
 
-    game.bg = game:CreateTexture(nil, "BACKGROUND")
-    game.bg:SetAllPoints(game)
-    if result == "Win" then
-        game.bg:SetColorTexture(0.1, 0.6, 0.1, 0.60)
+function update_page_info()
+    match_hist.page_num_display:SetText(tostring(match_hist.page_num + 1))
+
+    if match_hist.page_num == 0 then
+        match_hist.left_arr:Disable()
+        match_hist.left_arr:DesaturateHierarchy(1)
     else
-        game.bg:SetColorTexture(0.6, 0.1, 0.1, 0.60)
+        match_hist.left_arr:Enable()
+        match_hist.left_arr:DesaturateHierarchy(0)
+    end
+
+    local total_games = DRU.GetTotalGameAmount()
+    local last_page = math.floor(total_games / PAGE_LEN)
+    if match_hist.page_num == last_page then
+        match_hist.right_arr:Disable()
+        match_hist.right_arr:DesaturateHierarchy(1)
+    else
+        match_hist.right_arr:Enable()
+        match_hist.right_arr:DesaturateHierarchy(0)    
     end
 end
 
-local function make_game_page() -- decides where the next game should be generated in the ui
-    local games = DRU.GetMatchHistoryPage(0)
-    local y_pos = -28
+-- search box
+match_hist.search_box = CreateFrame("EditBox", nil, match_hist, "InputBoxTemplate") -- search bar
+match_hist.search_box:SetSize(175, 30)
+match_hist.search_box:SetPoint("TOPLEFT", match_hist, "TOPLEFT", 4, 2)
+match_hist.search_box:SetAutoFocus(false)
+match_hist.search_box:SetScript("OnEnterPressed", function(self) -- if enter is pressed, search:
+end)
+match_hist.search_box_text = match_hist.search_box:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall") -- hint text for search bar
+match_hist.search_box_text:SetPoint("LEFT", match_hist.search_box, "LEFT")
+match_hist.search_box_text:SetText("Search for opponents")
+match_hist.search_box_text:SetTextColor(0.6, 0.6, 0.6)
+match_hist.search_box:SetScript("OnEditFocusGained", function(self)
+    match_hist.search_box_text:Hide()
+end)
+match_hist.search_box:SetScript("OnEditFocusLost", function(self)
+    local text = match_hist.search_box:GetText()
+    if text == "" then
+        match_hist.search_box_text:Show()
+    end
+end)
 
-    for i, game in ipairs(games) do
-        local id, opp, result, gold = unpack(game)
-        if i ~= 1 then y_pos = y_pos - 23 end
+match_hist.page = CreateFrame("Frame", nil, match_hist)
+match_hist.page.games = {}
 
-        make_game_item(id, opp, result, gold, y_pos)
+function init_hist_entry(y_pos, num) -- creates 1 game entry "preset" at given y_pos
+    match_hist.page.games[num] = CreateFrame("Button", nil, match_hist.page)
+    local game = match_hist.page.games[num]
 
-        print(i)
+    game:SetPoint("TOPLEFT", match_hist, "TOPLEFT", 0, y_pos)
+    game:SetSize(263, 20)
+
+    game.bg = game:CreateTexture(nil, "BACKGROUND")
+    game.bg:SetAllPoints(game)
+
+    game.gold = game:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    game.gold:SetPoint("LEFT")
+
+    game.opp = game:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    game.opp:SetPoint("CENTER")
+
+    game:SetScript("OnClick", function() print(game.id) end)
+end
+
+function edit_hist_entry(id, opp, result, gold, num) -- edits ui elements of game entry in match history list
+    local game = match_hist.page.games[num]
+
+    game.gold:SetText(gold)
+    game.opp:SetText(opp)
+    game.id = id -- every game listed keeps track of their own game id
+
+    local color_set
+    if result == "Win" then
+        color_set = COLORS.WIN
+    else
+        color_set = COLORS.LOSS
+    end
+
+    game.bg:SetColorTexture(unpack(color_set.normal))
+    game:SetScript("OnEnter", function(self) self.bg:SetColorTexture(unpack(color_set.hover)) end)
+    game:SetScript("OnLeave", function(self)
+    if self.active then self.bg:SetColorTexture(unpack(color_set.hover)) else self.bg:SetColorTexture(unpack(color_set.normal)) end
+    end)
+end
+
+function edit_page(page) -- wrapper for for loop
+    local page_data = DRU.GetMatchHistoryPage(page, PAGE_LEN)
+    for i = 1, PAGE_LEN + 1 do
+        if page_data[i] then
+            local id, opp, result, gold = unpack(page_data[i])
+            edit_hist_entry(id, opp, result, gold, i)
+            match_hist.page.games[i]:Show()
+        else
+            match_hist.page.games[i]:Hide()
+        end
+    end
+end
+
+function make_page() -- wrapper for for loop
+    for i = 1, PAGE_LEN + 1 do
+        if i ~= 1 then TOP_GAME_POS = TOP_GAME_POS - 23 end
+        init_hist_entry(TOP_GAME_POS, i) -- using the numerator of the for loop to index the list of games
     end
 end
 
 SLASH_DEATHROLLTRY1 = "/drtry" -- dev tool
 SlashCmdList["DEATHROLLTRY"] = function()
-    make_game_page()
+    local game = match_hist.page.games[4]
+    game.gold:SetText("Hi")
 end
 
-local game_details_frame = CreateFrame("Frame", nil, tabFrames[1]) -- parent of game details view
-game_details_frame:Hide()
+local game_details = CreateFrame("Frame", nil, tabFrames[1]) -- parent of game details view
+game_details:Hide()
+
+
 
 -- Statistics
 tabFrames[2] = CreateFrame("Frame", nil, contentArea)
@@ -190,7 +296,9 @@ end
 
 tabFrames[2]:Hide()
 
--- finances
+
+
+-- Finances
 tabFrames[3] = CreateFrame("Frame", nil, contentArea)
 tabFrames[3]:SetAllPoints(contentArea)
 tabFrames[3].text = tabFrames[3]:CreateFontString(nil,"OVERLAY","GameFontNormal")
