@@ -1,6 +1,10 @@
 DeathRollUnlocked = DeathRollUnlocked or {}
 local DRU = DeathRollUnlocked
 
+-- GUI things
+local match_hist
+local game_details
+
 -- constants
 local PAGE_LEN = 7 -- amount of games displayed per page in match history - 1.
 local TOP_GAME_POS = -28 -- the y_pos of the top game of the page
@@ -15,6 +19,7 @@ local edit_hist_entry
 local update_page_info
 local arrow
 local disable_arrow
+local display_game
 
 -- text
 local stats_text = [[
@@ -29,6 +34,13 @@ Longest Streak of 2's: %d
 
 local finance_text = [[
 Work in Progress :)
+]]
+
+local game_info_text = [[
+Opponent: %s
+Result: %s
+%s's Wager: %s
+Your Wager: %s
 ]]
 
 -- anything which needs DRUDB should be listed as a function here.
@@ -126,7 +138,8 @@ tabFrames[1].text:SetJustifyH("LEFT")
 tabFrames[1].text:SetJustifyV("TOP")
 tabFrames[1].text:SetText("")
 
-local match_hist = CreateFrame("Frame", nil, tabFrames[1]) -- parent of the match history list view
+-- match history page display
+match_hist = CreateFrame("Frame", nil, tabFrames[1]) -- parent of the match history list view
 match_hist:SetPoint("TOPLEFT", tabFrames[1], "TOPLEFT", 7, 0)
 match_hist:SetSize(263, 240)
 match_hist.page_num = 0
@@ -142,7 +155,7 @@ end
 
 -- arrows & page number
 match_hist.left_arr = CreateFrame("Button", nil, match_hist, "UIPanelButtonTemplate")
-match_hist.left_arr:SetPoint("BOTTOMLEFT")
+match_hist.left_arr:SetPoint("BOTTOMLEFT", -2, 0)
 match_hist.left_arr:SetSize(28, 28)
 match_hist.left_arr:SetNormalTexture("Interface\\Buttons\\UI-SpellbookIcon-PrevPage-Up")
 match_hist.left_arr:SetScript("OnClick", function() arrow(-1) end)
@@ -225,7 +238,7 @@ function init_hist_entry(y_pos, num) -- creates 1 game entry "preset" at given y
     game.opp = game:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     game.opp:SetPoint("CENTER")
 
-    game:SetScript("OnClick", function() print(game.id) end)
+    game:SetScript("OnClick", function() display_game(DRU.GetGameByID(game.id)) end) -- when u click a game in the list
 end
 
 function edit_hist_entry(id, opp, result, gold, num) -- edits ui elements of game entry in match history list
@@ -269,14 +282,71 @@ function make_page() -- wrapper for for loop
     end
 end
 
+function DRU.UpdateCurrPage() -- on page 1, the live udpate works, but on any other page it doesn't.
+    edit_page(match_hist.page_num)
+end
+
+-- game details display
+game_details = CreateFrame("Frame", nil, tabFrames[1]) -- parent of game details view
+game_details:SetPoint("TOPLEFT", tabFrames[1], "TOPLEFT", 7, -3)
+game_details:SetSize(263, 240)
+
+game_details.back_arr = CreateFrame("Button", nil, game_details, "UIPanelButtonTemplate")
+game_details.back_arr:SetPoint("TOPLEFT", 0, 0)
+game_details.back_arr:SetSize(28, 28)
+game_details.back_arr:SetNormalTexture("Interface\\Buttons\\UI-SpellbookIcon-PrevPage-Up")
+game_details.back_arr:SetScript("OnClick", function() game_details:Hide() match_hist:Show() end)
+
+game_details.info = CreateFrame("Frame", nil, game_details)
+game_details.info:SetPoint("TOPRIGHT", game_details, "TOPRIGHT", 0, -2)
+game_details.info:SetSize(230, 100)
+game_details.info.text_1 = game_details.info:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+game_details.info.text_1:SetJustifyH("LEFT")
+game_details.info.text_1:SetJustifyV("TOP") 
+game_details.info.text_1:SetPoint("TOPLEFT", game_details.info, "TOPLEFT")
+game_details.info.text_2 = game_details.info:CreateFontString(nil, "OVERLAY", "GameFontNormalHuge")
+game_details.info.text_2:SetPoint("TOPLEFT", game_details.info, "TOPLEFT", 0, -55)
+game_details.info.text_2:SetText("Rolls")
+
+game_details.rolls = game_details:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+game_details.rolls:SetJustifyH("LEFT")
+game_details.rolls:SetJustifyV("TOP") 
+game_details.rolls:SetPoint("TOPLEFT", game_details.info, "TOPLEFT", 0, -78)
+
+game_details:Hide()
+-- game_details.bg = game_details:CreateTexture(nil, "BACKGROUND")
+-- game_details.bg:SetAllPoints(game_details.info)
+-- game_details.bg:SetColorTexture(1, 0, 0, 0.5)
+
+function display_game(game)
+    match_hist:Hide()
+    game_details:Show()
+
+    local opp = game.info.opp or "None"
+    local result = game.info.result or "None"
+    local my_wager = string.concat(tostring(game.info.my_wager), "g")
+    local opp_wager = string.concat(tostring(game.info.opp_wager), "g")
+    local rolls = game.rolls
+
+    -- the tostring happens here so i can easily use "or" on the variables above, otherwise an empty string ~= None
+    game_details.info.text_1:SetText(string.format(game_info_text, opp, result, opp, opp_wager, my_wager))
+
+    local text = [[]]
+    for i, roll_table in ipairs(rolls) do
+        local roller = roll_table[2]
+        if roller == DRU.me then roller = "You" end
+        local roll = roll_table[3]
+        local new_line = string.format("%s rolled %d.\n", roller, roll)
+        text = string.concat(text, new_line)
+    end
+    game_details.rolls:SetText(text)
+end
+
 SLASH_DEATHROLLTRY1 = "/drtry" -- dev tool
 SlashCmdList["DEATHROLLTRY"] = function()
     local game = match_hist.page.games[4]
     game.gold:SetText("Hi")
 end
-
-local game_details = CreateFrame("Frame", nil, tabFrames[1]) -- parent of game details view
-game_details:Hide()
 
 
 

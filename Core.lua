@@ -60,10 +60,10 @@ channel_listener:SetScript("OnEvent", function(self, event, prefix, message, cha
 
             if opp_roll == 1 then
                 print(string.format("|cffffff00DRU:|r %s wanted to deathroll you for %s starting from %d, but they immediately lost!", sender, opp_wager_str, opp_max_roll))
-                DRU.HistoryChange("FastWin", sender, opp_roll, opp_max_roll, time(), nil, nil, opp_wager)
+                DRU.HistoryChange("FastWin", sender, opp_roll, opp_max_roll, time(), nil, sender, opp_wager)
             else
                 print(string.format("|cffffff00DRU:|r %s wants to deathroll you for %s starting from %d!", sender, opp_wager_str, opp_max_roll))
-                DRU.HistoryChange("NewRequest", sender, opp_roll, opp_max_roll, time(), nil, nil, opp_wager)
+                DRU.HistoryChange("NewRequest", sender, opp_roll, opp_max_roll, time(), nil, sender, opp_wager)
             end
 
         elseif msg_type == "RemoveRequest" then -- removes player from requests

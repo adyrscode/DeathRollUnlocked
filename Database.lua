@@ -72,7 +72,7 @@ function DRU.HistoryChange(type, player, roll, max_roll, time, result, opp, wage
 
     elseif type == "FastLoss" then -- special case for when our very first roll is immediately 1: otherwise the roll is added twice, because we have to start and end game.
         if DRUDB.global_stats.total_gold == nil then DRUDB.global_stats.total_gold = 0 end
-        table.insert(DRUDB.games, {info = {opp = opp, result = "Loss", my_wager = wager, id = DRU.GenerateGameID()}, rolls = {{time, player, roll, max_roll}}})
+        table.insert(DRUDB.games, {info = {opp = opp, result = "Loss", my_wager = wager, opp_wager = 0, id = DRU.GenerateGameID()}, rolls = {{time, player, roll, max_roll}}})
         if DRUDB.global_stats.total_losses == nil then DRUDB.global_stats.total_losses = 0 end
             DRUDB.global_stats["total_losses"] = DRUDB.global_stats["total_losses"] + 1
             DRUDB.global_stats["total_gold"] = DRUDB.global_stats["total_gold"] - DRUDB.games[#DRUDB.games].info.my_wager 
@@ -81,8 +81,9 @@ function DRU.HistoryChange(type, player, roll, max_roll, time, result, opp, wage
             DRU.UpdateStats()
 
     elseif type == "FastWin" then -- special case for when someone rolls us and immediately rolls 1
+        print("Opp:", opp, "Player:", player)
         if DRUDB.global_stats.total_gold == nil then DRUDB.global_stats.total_gold = 0 end -- TODO: what if our opponent is already in the middle of a deathroll?
-        table.insert(DRUDB.games, {info = {opp = opp, result = "Win", opp_wager = wager, id = DRU.GenerateGameID()}, rolls = {{time, player, roll, max_roll}}})
+        table.insert(DRUDB.games, {info = {opp = opp, result = "Win", my_wager = 0, opp_wager = wager, id = DRU.GenerateGameID()}, rolls = {{time, player, roll, max_roll}}})
         if DRUDB.global_stats.total_losses == nil then DRUDB.global_stats.total_losses = 0 end
             DRUDB.global_stats["total_wins"] = DRUDB.global_stats["total_wins"] + 1
             DRUDB.global_stats["total_gold"] = DRUDB.global_stats["total_gold"] + DRUDB.games[#DRUDB.games].info.opp_wager 
@@ -113,6 +114,7 @@ function DRU.HistoryChange(type, player, roll, max_roll, time, result, opp, wage
         table.insert(curr_game.rolls, {time, player, roll, max_roll}) -- if it's ending the game we always add the roll
         DRU.GetGameState() -- when a game ends we need to update gamestate
         DRU.UpdateStats() -- this is for gui. TODO: make clear in the function that it's gui related
+        DRU.UpdateCurrPage()
     end
 end
 
