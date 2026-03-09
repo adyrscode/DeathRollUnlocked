@@ -197,7 +197,7 @@ function DRU.GetRoll(player) -- returns roller, roll, max_roll
     end
 end
 
-function DRU.GetMatchHistoryPage(page_num, page_len)
+function DRU.GetMatchHistoryPage(page_num, page_len, opp_search)
     -- off by 1: page_len is always 1 lower than the actual page length
     local page_start = #DRUDB.games - (page_num * page_len) -- am i secretly a math genius?
     local page_end = page_start - page_len
@@ -218,7 +218,9 @@ function DRU.GetMatchHistoryPage(page_num, page_len)
             gold_str = string.concat(tostring(-DRUDB.games[i].info.my_wager), "g")
         end
 
-        table.insert(my_games, {id, opp, result, gold_str})
+        if (opp == opp_search) or (opp_search == "") then
+            table.insert(my_games, {id, opp, result, gold_str})
+        end
     end
 
     return my_games
@@ -279,7 +281,7 @@ function DRU.GetStats() -- returns all stats for the GUI
     return total, win_rate_str, wins, losses, gold, worst_roll, streak
 end
 
-function DRU.StreakCheck() -- sees if there's a streak of 2 rolls
+function DRU.StreakCheck() -- sees if there's a long streak of 2 rolls
     local last_game = DRUDB.games[#DRUDB.games]
     if not last_game then return end
     

@@ -4,6 +4,7 @@
 local prefix = "deathroll_data"
 DeathRollUnlocked = DeathRollUnlocked or {}
 local DRU = DeathRollUnlocked -- anytime a function has DRU. in front of it, that means it has to be called from another file at some point
+DRU.DEBUG = false -- remember to always set this to false and disable the testing.lua in toc before pushing
 
 -- players and their rolls
 DRU.me = UnitName("player")
@@ -19,14 +20,15 @@ local cancel_lock = false
 local player_targeted = false
 
 -- functions
-local target_check -- function to check 2 variables
 local do_roll
 local start_game
+local target_check
 local end_game
 local scam_check
 local scam_alert
 local send_addon_data
 local result_check
+local party_check
 
 local addon_loader = CreateFrame("Frame") -- addon loading stuff
 addon_loader:RegisterEvent("ADDON_LOADED")
@@ -107,61 +109,60 @@ function send_addon_data(message, channel, target, sender)
 end
 
 -- listening for system messages
-local roll_parser = CreateFrame("Frame")
-roll_parser:RegisterEvent("CHAT_MSG_SYSTEM")  -- system messages, like rolls
-roll_parser:SetScript("OnEvent", function(self, event, msg, sender, ...)
+local roll_listener = CreateFrame("Frame")
+roll_listener:RegisterEvent("CHAT_MSG_SYSTEM")  -- system messages, like rolls
+roll_listener:SetScript("OnEvent", function(self, event, msg, sender, ...)
     if not msg:find("rolls", 1, true) then return end -- if not roll then discard
-        DRU.GetGameState()
-    
-        local history_type = nil -- in what way to add roll to history
-        local print_result = "" -- lose/win prints
-        local result = nil -- added to history
-        local roller, roll_str, min_roll_str, max_roll_str = string.match(msg, "^(.-) rolls (%d+) %((%d+)-(%d+)%)$") -- transform from string to information
-        local roll = tonumber(roll_str)
-        local min_roll = tonumber(min_roll_str)
-        local max_roll = tonumber(max_roll_str)
+    DRU.ParseRoll(msg)
+end)
 
-        if my_request_pending and roller == DRU.me then
-            send_addon_data("GameRequest:" .. roll .. ":" .. max_roll .. ":" .. gs.my_wager, "WHISPER", target_name) -- has to be here because it needs to know the roll before sending
-            DRU.LuckCheck(roll, max_roll, roller) -- check if the roll was special in some way for stat keeping
-            player_targeted, target_name = target_check()
-            result, print_result, history_type = result_check(roll, roller)
-            my_request_pending = false
-            
-        elseif gs.in_game and ((roller == DRU.me) or (roller == gs.curr_opp)) then
-            local scam, scam_type, exp_roll = scam_check(min_roll, max_roll, roller)
-            local roll_index = DRU.GetRollIndex()
-            if scam and (roll_index ~= 1) then -- if only 1 roll that means roll hasn't been accepted yet so scam checks don't apply and are not processed anyway
+function DRU.ParseRoll(msg)
+    DRU.GetGameState()
+
+    local history_type = nil -- in what way to add roll to history
+    local print_result = "" -- lose/win prints
+    local result = nil -- added to history
+    local roller, roll_str, min_roll_str, max_roll_str = string.match(msg, "^(.-) rolls (%d+) %((%d+)-(%d+)%)$") -- transform from string to information
+    local roll = tonumber(roll_str)
+    local min_roll = tonumber(min_roll_str)
+    local max_roll = tonumber(max_roll_str)
+
+    if my_request_pending and roller == DRU.me then
+        send_addon_data("GameRequest:" .. roll .. ":" .. max_roll .. ":" .. gs.my_wager, "WHISPER", target_name) -- has to be here because it needs to know the roll before sending
+        DRU.LuckCheck(roll, max_roll, roller) -- check if the roll was special in some way for stat keeping
+        player_targeted, target_name = target_check()
+        result, print_result, history_type = result_check(roll, roller)
+        my_request_pending = false
+        
+    elseif gs.in_game and ((roller == DRU.me) or (roller == gs.curr_opp)) then
+        local scam, scam_type, exp_roll = scam_check(min_roll, max_roll, roller)
+        local roll_index = DRU.GetRollIndex()
+        if scam then
+            if roll_index ~= 1 then -- if it's the second roll, just disregard it without printing anything and return
                 scam_alert(scam_type, roller, min_roll, max_roll, exp_roll)
-            else
-                result, print_result, history_type = result_check(roll, roller)
-                DRU.LuckCheck(roll, max_roll, roller)
             end
+            return
+        else
+            result, print_result, history_type = result_check(roll, roller)
+            DRU.LuckCheck(roll, max_roll, roller)
 
-            if (roller == gs.curr_opp) and (roll_index == 1) then -- if it's the second roll and their turn we make sure the request is gone to avoid /roll exploitation
+            if roll_index == 1 then -- if it's the second roll we make sure their request is removed to get around /roll abuse
                 send_addon_data("ForceRemoveRequest:" .. roll .. ":" .. max_roll .. ":" .. gs.my_wager, "WHISPER", target_name)
             end
-        else -- return
-            return
-            -- there were plans here to allow a /roll to work as well, but for now it's postponed.
-            -- if (roller == DRU.me) then
-            --     for _, player in pairs(DRUDB.requests) do
-            --         if player.rolls[1][3] == max_roll then
-            --             start_game(roll, 0, nil)
-            --             return
-            --         end
-            --     end
-            -- end
         end
+    else
+        if DRU.DEBUG then print("Irrelevant roll. Returning...") end
+        return
+    end
 
     print(print_result)
-    DRU.HistoryChange(history_type, roller, roll, max_roll, time(), result, target_name, gs.my_wager) -- we only ever need to pass my wager here i think
+    DRU.HistoryChange(history_type, roller, roll, max_roll, time(), result, target_name, gs.my_wager) -- we only ever need to pass my wager here bc opp wager is stored via the addon channel
     if result == nil then DRU.GetGameState() else end
     DRU.button_update(gs.in_game, gs.my_turn)
     if (history_type == "FastLoss") or (history_type == "EndGame") then
         end_game()
     end
-end)
+end
 
 function start_game(starting_roll, wager, source)
     player_targeted, target_name = target_check()
@@ -170,6 +171,17 @@ function start_game(starting_roll, wager, source)
         print("|cffffff00DRU:|r Please target a player to start a deathroll, type /drgames to see who wants to roll you.")
         
     else -- player targeted
+        local in_party, connected = party_check(target_name)
+        if not in_party then
+            print(string.format("|cffffff00DRU:|r %s is not in your party and won't be able to see your roll. Get in a party together before deathrolling.", target_name))
+            return
+        end
+
+        if not connected then
+            print(string.format("|cffffff00DRU:|r %s is not online right now.", target_name))
+            return
+        end
+    
         local target_request_pending, _, _, target_roll, _, target_wager = DRU.RequestCheck(target_name)
         local target_wager_str = string.format("%dg", target_wager)
         if target_wager == 0 then
@@ -212,7 +224,7 @@ function start_game(starting_roll, wager, source)
                 end
 
             else
-                print(string.format("|cffffff00DRU:|r %s already has a roll request pending, starting from %d for %s", target_name, target_roll, target_wager_str))
+                print(string.format("|cffffff00DRU:|r %s already has a roll request pending, starting from %d for %s.", target_name, target_roll, target_wager_str))
                 if source == "Button" then
                     DRU.textbox:SetText("")
                     DRU.textbox:ClearFocus()
@@ -225,7 +237,7 @@ function start_game(starting_roll, wager, source)
                 if source == "Button" then
                     DRU.textbox:SetFocus()
                 end
-            else   
+            else
                 if type(starting_roll) ~= "number" or starting_roll < 2 or starting_roll > 1000000 then -- min and max rolls are invalid
                     if source == "Button" then
                         DRU.textbox:SetText("")
@@ -306,7 +318,7 @@ function do_roll(type, target_name, roll, wager)
     end
 
     ChatFrame1EditBox:SetText(string.format("/roll %d", roll))
-    ChatEdit_SendText(ChatFrame1EditBox)  
+    ChatEdit_SendText(ChatFrame1EditBox)
 end
 
 function result_check(roll, roller)
@@ -367,8 +379,40 @@ function scam_alert(scam_type, scammer, min_roll, max_roll, exp_roll)
     end
 end
 
--- COMMANDS
+function party_check(player) -- returns bool for if player is in your party/raid, and if they are connected
+    local result = false
+    local total_members = GetNumGroupMembers()
+    local connected = true
 
+    if IsInGroup() then
+        for i = 1, total_members do
+            local name = UnitName("party"..i)
+            if name == player then  -- someday i might start using GUID instead of player names but today is not that day
+                result = true
+                break
+            end
+        end
+
+    elseif IsInRaid() then
+        for i = 1, total_members do
+            local name = UnitName("raid"..i)
+                if name == player then
+                    result = true
+                    break
+                end
+        end
+    end
+
+    if result then
+        if not UnitIsConnected(player) then
+            connected = false
+        end
+    end
+
+    return result, connected
+end
+
+-- COMMANDS
 
 SLASH_DEATHROLL1 = "/dr"
 SLASH_DEATHROLL2 = "/deathroll"

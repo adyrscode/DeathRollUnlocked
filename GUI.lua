@@ -2,8 +2,8 @@ DeathRollUnlocked = DeathRollUnlocked or {}
 local DRU = DeathRollUnlocked
 
 -- GUI things
-local match_hist
-local game_details
+local MH
+local GD
 
 -- constants
 local PAGE_LEN = 7 -- amount of games displayed per page in match history - 1.
@@ -20,6 +20,7 @@ local update_page_info
 local arrow
 local disable_arrow
 local display_game
+local add_row
 
 -- text
 local stats_text = [[
@@ -39,8 +40,8 @@ Work in Progress :)
 local game_info_text = [[
 Opponent: %s
 Result: %s
-%s's Wager: %s
 Your Wager: %s
+%s's Wager: %s
 ]]
 
 -- anything which needs DRUDB should be listed as a function here.
@@ -139,10 +140,10 @@ tabFrames[1].text:SetJustifyV("TOP")
 tabFrames[1].text:SetText("")
 
 -- match history page display
-match_hist = CreateFrame("Frame", nil, tabFrames[1]) -- parent of the match history list view
-match_hist:SetPoint("TOPLEFT", tabFrames[1], "TOPLEFT", 7, 0)
-match_hist:SetSize(263, 240)
-match_hist.page_num = 0
+MH = CreateFrame("Frame", nil, tabFrames[1]) -- parent of the match history list view
+MH:SetPoint("TOPLEFT", tabFrames[1], "TOPLEFT", 7, 0)
+MH:SetSize(263, 240)
+MH.page_num = 0
 
 function DRU.UpdateMatchHistory()
     
@@ -154,79 +155,80 @@ end
 -- bg:SetColorTexture(1, 0, 0, 0.5)
 
 -- arrows & page number
-match_hist.left_arr = CreateFrame("Button", nil, match_hist, "UIPanelButtonTemplate")
-match_hist.left_arr:SetPoint("BOTTOMLEFT", -2, 0)
-match_hist.left_arr:SetSize(28, 28)
-match_hist.left_arr:SetNormalTexture("Interface\\Buttons\\UI-SpellbookIcon-PrevPage-Up")
-match_hist.left_arr:SetScript("OnClick", function() arrow(-1) end)
+MH.left_arr = CreateFrame("Button", nil, MH, "UIPanelButtonTemplate")
+MH.left_arr:SetPoint("BOTTOMLEFT", -2, 0)
+MH.left_arr:SetSize(28, 28)
+MH.left_arr:SetNormalTexture("Interface\\Buttons\\UI-SpellbookIcon-PrevPage-Up")
+MH.left_arr:SetScript("OnClick", function() arrow(-1) end)
 
-match_hist.right_arr = CreateFrame("Button", nil, match_hist, "UIPanelButtonTemplate")
-match_hist.right_arr:SetPoint("BOTTOMRIGHT")
-match_hist.right_arr:SetSize(28, 28)
-match_hist.right_arr:SetNormalTexture("Interface\\Buttons\\UI-SpellbookIcon-NextPage-Up")
-match_hist.right_arr:SetScript("OnClick",function() arrow(1) end)
+MH.right_arr = CreateFrame("Button", nil, MH, "UIPanelButtonTemplate")
+MH.right_arr:SetPoint("BOTTOMRIGHT")
+MH.right_arr:SetSize(28, 28)
+MH.right_arr:SetNormalTexture("Interface\\Buttons\\UI-SpellbookIcon-NextPage-Up")
+MH.right_arr:SetScript("OnClick",function() arrow(1) end)
 
 function arrow(dir)
-    match_hist.page_num = match_hist.page_num + dir
-    edit_page(match_hist.page_num)
+    MH.page_num = MH.page_num + dir
+    edit_page(MH.page_num)
     update_page_info()
 end
 
-match_hist.page_num_display = match_hist:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-match_hist.page_num_display:SetScale(1.5)
-match_hist.page_num_display:SetPoint("BOTTOM", 0, 4)
+MH.page_num_display = MH:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+MH.page_num_display:SetScale(1.5)
+MH.page_num_display:SetPoint("BOTTOM", 0, 4)
 
 function update_page_info()
-    match_hist.page_num_display:SetText(tostring(match_hist.page_num + 1))
+    MH.page_num_display:SetText(tostring(MH.page_num + 1))
 
-    if match_hist.page_num == 0 then
-        match_hist.left_arr:Disable()
-        match_hist.left_arr:DesaturateHierarchy(1)
+    if MH.page_num == 0 then
+        MH.left_arr:Disable()
+        MH.left_arr:DesaturateHierarchy(1)
     else
-        match_hist.left_arr:Enable()
-        match_hist.left_arr:DesaturateHierarchy(0)
+        MH.left_arr:Enable()
+        MH.left_arr:DesaturateHierarchy(0)
     end
 
     local total_games = DRU.GetTotalGameAmount()
     local last_page = math.floor(total_games / PAGE_LEN)
-    if match_hist.page_num == last_page then
-        match_hist.right_arr:Disable()
-        match_hist.right_arr:DesaturateHierarchy(1)
+    if MH.page_num == last_page then
+        MH.right_arr:Disable()
+        MH.right_arr:DesaturateHierarchy(1)
     else
-        match_hist.right_arr:Enable()
-        match_hist.right_arr:DesaturateHierarchy(0)    
+        MH.right_arr:Enable()
+        MH.right_arr:DesaturateHierarchy(0)    
     end
 end
 
 -- search box
-match_hist.search_box = CreateFrame("EditBox", nil, match_hist, "InputBoxTemplate") -- search bar
-match_hist.search_box:SetSize(175, 30)
-match_hist.search_box:SetPoint("TOPLEFT", match_hist, "TOPLEFT", 4, 2)
-match_hist.search_box:SetAutoFocus(false)
-match_hist.search_box:SetScript("OnEnterPressed", function(self) -- if enter is pressed, search:
+MH.search_box = CreateFrame("EditBox", nil, MH, "InputBoxTemplate") -- search bar
+MH.search_box:SetSize(175, 30)
+MH.search_box:SetPoint("TOPLEFT", MH, "TOPLEFT", 4, 2)
+MH.search_box:SetAutoFocus(false)
+MH.search_box:SetScript("OnEnterPressed", function(self) -- if enter is pressed, search:
 end)
-match_hist.search_box_text = match_hist.search_box:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall") -- hint text for search bar
-match_hist.search_box_text:SetPoint("LEFT", match_hist.search_box, "LEFT")
-match_hist.search_box_text:SetText("Search for opponents")
-match_hist.search_box_text:SetTextColor(0.6, 0.6, 0.6)
-match_hist.search_box:SetScript("OnEditFocusGained", function(self)
-    match_hist.search_box_text:Hide()
+MH.search_box_text = MH.search_box:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall") -- hint text for search bar
+MH.search_box_text:SetPoint("LEFT", MH.search_box, "LEFT")
+MH.search_box_text:SetText("Search for opponents")
+MH.search_box_text:SetTextColor(0.6, 0.6, 0.6)
+MH.search_box:SetScript("OnEditFocusGained", function(self)
+    MH.search_box_text:Hide()
 end)
-match_hist.search_box:SetScript("OnEditFocusLost", function(self)
-    local text = match_hist.search_box:GetText()
+MH.search_box:SetScript("OnEditFocusLost", function(self)
+    local text = MH.search_box:GetText()
     if text == "" then
-        match_hist.search_box_text:Show()
+        MH.search_box_text:Show()
     end
 end)
+MH.search_box:SetScript("OnEnterPressed", function() edit_page(0) end)
 
-match_hist.page = CreateFrame("Frame", nil, match_hist)
-match_hist.page.games = {}
+MH.page = CreateFrame("Frame", nil, MH)
+MH.page.games = {}
 
 function init_hist_entry(y_pos, num) -- creates 1 game entry "preset" at given y_pos
-    match_hist.page.games[num] = CreateFrame("Button", nil, match_hist.page)
-    local game = match_hist.page.games[num]
+    MH.page.games[num] = CreateFrame("Button", nil, MH.page)
+    local game = MH.page.games[num]
 
-    game:SetPoint("TOPLEFT", match_hist, "TOPLEFT", 0, y_pos)
+    game:SetPoint("TOPLEFT", MH, "TOPLEFT", 0, y_pos)
     game:SetSize(263, 20)
 
     game.bg = game:CreateTexture(nil, "BACKGROUND")
@@ -242,7 +244,7 @@ function init_hist_entry(y_pos, num) -- creates 1 game entry "preset" at given y
 end
 
 function edit_hist_entry(id, opp, result, gold, num) -- edits ui elements of game entry in match history list
-    local game = match_hist.page.games[num]
+    local game = MH.page.games[num]
 
     game.gold:SetText(gold)
     game.opp:SetText(opp)
@@ -263,14 +265,15 @@ function edit_hist_entry(id, opp, result, gold, num) -- edits ui elements of gam
 end
 
 function edit_page(page) -- wrapper for for loop
-    local page_data = DRU.GetMatchHistoryPage(page, PAGE_LEN)
+    local opp_search = MH.search_box:GetText()
+    local page_data = DRU.GetMatchHistoryPage(page, PAGE_LEN, opp_search)
     for i = 1, PAGE_LEN + 1 do
         if page_data[i] then
             local id, opp, result, gold = unpack(page_data[i])
             edit_hist_entry(id, opp, result, gold, i)
-            match_hist.page.games[i]:Show()
+            MH.page.games[i]:Show()
         else
-            match_hist.page.games[i]:Hide()
+            MH.page.games[i]:Hide()
         end
     end
 end
@@ -283,44 +286,62 @@ function make_page() -- wrapper for for loop
 end
 
 function DRU.UpdateCurrPage() -- on page 1, the live udpate works, but on any other page it doesn't.
-    edit_page(match_hist.page_num)
+    edit_page(MH.page_num)
 end
 
 -- game details display
-game_details = CreateFrame("Frame", nil, tabFrames[1]) -- parent of game details view
-game_details:SetPoint("TOPLEFT", tabFrames[1], "TOPLEFT", 7, -3)
-game_details:SetSize(263, 240)
+GD = CreateFrame("Frame", nil, tabFrames[1]) -- parent of game details view
+GD:SetPoint("TOPLEFT", tabFrames[1], "TOPLEFT", 7, -3)
+GD:SetSize(263, 240)
+GD:Hide()
 
-game_details.back_arr = CreateFrame("Button", nil, game_details, "UIPanelButtonTemplate")
-game_details.back_arr:SetPoint("TOPLEFT", 0, 0)
-game_details.back_arr:SetSize(28, 28)
-game_details.back_arr:SetNormalTexture("Interface\\Buttons\\UI-SpellbookIcon-PrevPage-Up")
-game_details.back_arr:SetScript("OnClick", function() game_details:Hide() match_hist:Show() end)
+GD.back_arr = CreateFrame("Button", nil, GD, "UIPanelButtonTemplate")
+GD.back_arr:SetPoint("TOPLEFT", 0, 0)
+GD.back_arr:SetSize(28, 28)
+GD.back_arr:SetNormalTexture("Interface\\Buttons\\UI-SpellbookIcon-PrevPage-Up")
+GD.back_arr:SetScript("OnClick", function()
+     GD:Hide()
+     MH:Show()
+end)
 
-game_details.info = CreateFrame("Frame", nil, game_details)
-game_details.info:SetPoint("TOPRIGHT", game_details, "TOPRIGHT", 0, -2)
-game_details.info:SetSize(230, 100)
-game_details.info.text_1 = game_details.info:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-game_details.info.text_1:SetJustifyH("LEFT")
-game_details.info.text_1:SetJustifyV("TOP") 
-game_details.info.text_1:SetPoint("TOPLEFT", game_details.info, "TOPLEFT")
-game_details.info.text_2 = game_details.info:CreateFontString(nil, "OVERLAY", "GameFontNormalHuge")
-game_details.info.text_2:SetPoint("TOPLEFT", game_details.info, "TOPLEFT", 0, -55)
-game_details.info.text_2:SetText("Rolls")
+GD.info = CreateFrame("Frame", nil, GD)
+GD.info:SetPoint("TOPRIGHT", GD, "TOPRIGHT", 0, -2)
+GD.info:SetSize(230, 100)
+GD.info.text_1 = GD.info:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+GD.info.text_1:SetJustifyH("LEFT")
+GD.info.text_1:SetJustifyV("TOP") 
+GD.info.text_1:SetPoint("TOPLEFT", GD.info, "TOPLEFT")
+GD.info.text_2 = GD.info:CreateFontString(nil, "OVERLAY", "GameFontNormalHuge")
+GD.info.text_2:SetPoint("TOPLEFT", GD, "TOPLEFT", 0, -55)
+GD.info.text_2:SetText("Rolls")
 
-game_details.rolls = game_details:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-game_details.rolls:SetJustifyH("LEFT")
-game_details.rolls:SetJustifyV("TOP") 
-game_details.rolls:SetPoint("TOPLEFT", game_details.info, "TOPLEFT", 0, -78)
+GD.scroll = CreateFrame("ScrollFrame", nil, GD, "UIPanelScrollFrameTemplate")
+GD.scroll:SetPoint("TOPLEFT", GD, "TOPLEFT", 0, -80)
+GD.scroll:SetSize(240, 155)
 
-game_details:Hide()
--- game_details.bg = game_details:CreateTexture(nil, "BACKGROUND")
--- game_details.bg:SetAllPoints(game_details.info)
--- game_details.bg:SetColorTexture(1, 0, 0, 0.5)
+GD.roll_frame = CreateFrame("Frame", nil, GD.scroll)
+GD.roll_frame:SetSize(220, 155)
+GD.scroll:SetScrollChild(GD.roll_frame)
+
+-- GD.scroll.bg = GD.scroll:CreateTexture(nil, "BACKGROUND")
+-- GD.scroll.bg:SetAllPoints(GD.scroll)
+-- GD.scroll.bg:SetColorTexture(1, 0, 0, 0.5)
+
+GD.rolls = {}
+function add_row(roll_line, max_roll_line, pos, i) -- adds a roll to the scroll frame. if the text in the pos already exists, only edit the text and don't waste resources creating a new frame.
+    if not GD.rolls[i] then
+        GD.rolls[i] = GD.roll_frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        GD.rolls[i]:SetJustifyH("LEFT")
+        GD.rolls[i]:SetJustifyV("TOP")
+        GD.rolls[i]:SetPoint("TOPLEFT", GD.roll_frame, "TOPLEFT", 0, pos)
+    end
+    GD.rolls[i]:SetText(roll_line)
+    GD.rolls[i]:Show()
+end
 
 function display_game(game)
-    match_hist:Hide()
-    game_details:Show()
+    MH:Hide()
+    GD:Show()
 
     local opp = game.info.opp or "None"
     local result = game.info.result or "None"
@@ -328,23 +349,30 @@ function display_game(game)
     local opp_wager = string.concat(tostring(game.info.opp_wager), "g")
     local rolls = game.rolls
 
-    -- the tostring happens here so i can easily use "or" on the variables above, otherwise an empty string ~= None
-    game_details.info.text_1:SetText(string.format(game_info_text, opp, result, opp, opp_wager, my_wager))
+    GD.info.text_1:SetText(string.format(game_info_text, opp, result, my_wager, opp, opp_wager))
 
-    local text = [[]]
+    local pos = 0
+    local last_row = 0
     for i, roll_table in ipairs(rolls) do
         local roller = roll_table[2]
         if roller == DRU.me then roller = "You" end
         local roll = roll_table[3]
-        local new_line = string.format("%s rolled %d.\n", roller, roll)
-        text = string.concat(text, new_line)
+        local max_roll = roll_table[4]
+        local roll_line = string.format("%s rolled %d", roller, roll)
+        local max_roll_line = string.format("(1-%d)") -- TODO: not yet used
+        add_row(roll_line, max_roll_line, pos, i)
+        pos = pos - 12
+        last_row = i
     end
-    game_details.rolls:SetText(text)
+
+    for i = last_row + 1, #GD.rolls do -- hide all the rows after the last one
+        GD.rolls[i]:Hide()
+    end
 end
 
 SLASH_DEATHROLLTRY1 = "/drtry" -- dev tool
 SlashCmdList["DEATHROLLTRY"] = function()
-    local game = match_hist.page.games[4]
+    local game = MH.page.games[4]
     game.gold:SetText("Hi")
 end
 
@@ -403,10 +431,10 @@ SetTab(1) -- default to History
 DRU.menu:Show()
 
 -- Create draggable parent frame for button
-local parentFrame = CreateFrame("Frame", "DeathrollFrame", UIParent, "BackdropTemplate")
-parentFrame:SetSize(100, 40)
-parentFrame:SetPoint("CENTER", 300, 400)
-parentFrame:SetBackdrop({
+local button_frame = CreateFrame("Frame", "DeathrollFrame", UIParent, "BackdropTemplate")
+button_frame:SetSize(100, 40)
+button_frame:SetPoint("CENTER", -100, -50)
+button_frame:SetBackdrop({
     bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
     edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
     edgeSize = 12,
@@ -414,30 +442,30 @@ parentFrame:SetBackdrop({
 })
 local function OnDragStart(self, button)
     if button == "MiddleButton" then
-        parentFrame:StartMoving()
+        button_frame:StartMoving()
     end
 end
 local function OnDragStop(self, button)
     if button == "MiddleButton" then
-        parentFrame:StopMovingOrSizing()
+        button_frame:StopMovingOrSizing()
     end
 end
-parentFrame:SetBackdropColor(0, 0, 0, 0) 
-parentFrame:SetBackdropBorderColor(0, 0, 0, 0)
-parentFrame:SetMovable(true)
-parentFrame:EnableMouse(true)
-parentFrame:RegisterForDrag("MiddleButton")
-parentFrame:SetScript("OnDragStart", parentFrame.StartMoving)
-parentFrame:SetScript("OnDragStop", parentFrame.StopMovingOrSizing)
-parentFrame:Show()
-parentFrame:SetScript("OnMouseDown", OnDragStart)
-parentFrame:SetScript("OnMouseUp", OnDragStop)
+button_frame:SetBackdropColor(0, 0, 0, 0) 
+button_frame:SetBackdropBorderColor(0, 0, 0, 0)
+button_frame:SetMovable(true)
+button_frame:EnableMouse(true)
+button_frame:RegisterForDrag("MiddleButton")
+button_frame:SetScript("OnDragStart", button_frame.StartMoving)
+button_frame:SetScript("OnDragStop", button_frame.StopMovingOrSizing)
+button_frame:Show()
+button_frame:SetScript("OnMouseDown", OnDragStart)
+button_frame:SetScript("OnMouseUp", OnDragStop)
 
 -- Create the Deathroll button inside the frame
-DRU.button = CreateFrame("Button", nil, parentFrame, "UIPanelButtonTemplate")
+DRU.button = CreateFrame("Button", nil, button_frame, "UIPanelButtonTemplate")
 local button = DRU.button
 button:SetSize(100, 30)
-button:SetPoint("BOTTOM", parentFrame, "CENTER", 0, 0)
+button:SetPoint("BOTTOM", button_frame, "CENTER", 0, 0)
 button:SetScript("OnMouseDown", OnDragStart) -- button middle mouse button can move the frame
 button:SetScript("OnMouseUp", OnDragStop)
 button:SetScript("OnClick", function(self, button)
@@ -460,10 +488,10 @@ function DRU.button_update(in_game, my_turn)
 end
 
 -- create the textbox
-DRU.textbox = CreateFrame("EditBox", nil, parentFrame, "InputBoxTemplate") -- TODO: change to 2 textboxes, 1 for roll and 1 for wager
+DRU.textbox = CreateFrame("EditBox", nil, button_frame, "InputBoxTemplate") -- TODO: change to 2 textboxes, 1 for roll and 1 for wager
 local textbox = DRU.textbox
 textbox:SetSize(94, 30)
-textbox:SetPoint("CENTER", parentFrame, "CENTER", 3, -8)
+textbox:SetPoint("CENTER", button_frame, "CENTER", 3, -8)
 textbox:SetAutoFocus(false)
 textbox:SetScript("OnEnterPressed", function(self) -- if enter is pressed
     DRU.button_click()
@@ -472,9 +500,9 @@ end)
 SLASH_DEATHROLLBUTTON1 = "/drbutton"
 SLASH_DEATHROLLBUTTON2 = "/deathrollbutton"
 SlashCmdList["DEATHROLLBUTTON"] = function() -- hide and show the button
-    if parentFrame:IsShown() then
-        parentFrame:Hide()
-    else parentFrame:Show()
+    if button_frame:IsShown() then
+        button_frame:Hide()
+    else button_frame:Show()
     end
 end
 
