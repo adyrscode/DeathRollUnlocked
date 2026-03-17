@@ -47,7 +47,7 @@ Your Wager: %s
 -- anything which needs DRUDB should be listed as a function here.
 function DRU.UI_Init(in_game, my_turn)
     DRU.UpdateStats()
-    DRU.button_update(in_game, my_turn)
+    DRU.ButtonUpdate(in_game, my_turn)
     make_page()
     edit_page(0) -- load the 0th page
     update_page_info()
@@ -356,12 +356,14 @@ function display_game(game)
     for i, roll_table in ipairs(rolls) do
         local roller = roll_table[2]
         if roller == DRU.me then roller = "You" end
-        local roll = roll_table[3]
         local max_roll = roll_table[4]
-        local roll_line = string.format("%s rolled %d", roller, roll)
         local max_roll_line = string.format("(1-%d)") -- TODO: not yet used
+        local roll = tostring(roll_table[3])
+        if i == 1 then roll = string.format(roll.." |cffaaaaaa(1-%d)|r", max_roll) end
+
+        local roll_line = string.format("%s rolled %s", roller, roll)
         add_row(roll_line, max_roll_line, pos, i)
-        pos = pos - 12
+        pos = pos - 13
         last_row = i
     end
 
@@ -369,14 +371,6 @@ function display_game(game)
         GD.rolls[i]:Hide()
     end
 end
-
-SLASH_DEATHROLLTRY1 = "/drtry" -- dev tool
-SlashCmdList["DEATHROLLTRY"] = function()
-    local game = MH.page.games[4]
-    game.gold:SetText("Hi")
-end
-
-
 
 -- Statistics
 tabFrames[2] = CreateFrame("Frame", nil, contentArea)
@@ -473,7 +467,7 @@ button:SetScript("OnClick", function(self, button)
 end)
 
 -- button_text is called after we know gamestate
-function DRU.button_update(in_game, my_turn)
+function DRU.ButtonUpdate(in_game, my_turn)
     if in_game then
         button:SetText("Roll!")
         if not my_turn then
@@ -488,14 +482,24 @@ function DRU.button_update(in_game, my_turn)
 end
 
 -- create the textbox
-DRU.textbox = CreateFrame("EditBox", nil, button_frame, "InputBoxTemplate") -- TODO: change to 2 textboxes, 1 for roll and 1 for wager
+DRU.textbox = CreateFrame("EditBox", nil, button_frame, "InputBoxTemplate") -- TODO: change to 2 textboxes, 1 for roll and 1 for wager (?)
 local textbox = DRU.textbox
 textbox:SetSize(94, 30)
 textbox:SetPoint("CENTER", button_frame, "CENTER", 3, -8)
 textbox:SetAutoFocus(false)
-textbox:SetScript("OnEnterPressed", function(self) -- if enter is pressed
+textbox:SetScript("OnEnterPressed", function(self)
     DRU.button_click()
 end)
+
+function DRU.UpdateTextbox(focus, text)
+    if focus == 1 then
+        textbox:SetFocus()
+    elseif focus == 0 then
+        textbox:ClearFocus()
+    end
+
+    textbox:SetText(text)
+end
 
 SLASH_DEATHROLLBUTTON1 = "/drbutton"
 SLASH_DEATHROLLBUTTON2 = "/deathrollbutton"

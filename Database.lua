@@ -52,7 +52,7 @@ function DRU.HistoryChange(type, player, roll, max_roll, time, result, opp, wage
         return
         
     elseif type == "NewRequest" then -- always from another player
-        DRUDB.requests[player] = {info = {opp = player, result = nil, my_wager = 0, opp_wager = wager, id = DRU.GenerateGameID()}, rolls = {{time, player, roll, max_roll}}} -- EXTRA BRACKETS NESSECARY FOR EZ DATA TRANSFER!!!
+        DRUDB.requests[player] = {info = {opp = player, result = nil, my_wager = 0, opp_wager = wager, id = DRU.GenerateGameID()}, rolls = {{time, player, roll, max_roll}}} -- nested table for smooth & easy data transfer
     
     elseif type == "MoveRequest" then
         table.insert(DRUDB.games, DRUDB.requests[player])
@@ -119,17 +119,16 @@ function DRU.HistoryChange(type, player, roll, max_roll, time, result, opp, wage
 end
 
 function DRU.RequestCheck(target_name) -- checks if target selected is in request list, and gives back all bool, time, player, roll, maxroll, wager
-    if not DRUDB.requests or next(DRUDB.requests) == nil then
+    if (not DRUDB.requests) or (next(DRUDB.requests) == nil) then
         return false, 0, nil, 0, 0, 0
-    else 
+    else
         for player in pairs(DRUDB.requests) do
             if player == target_name then
                 local time, name, roll, max_roll = unpack(DRUDB.requests[target_name].rolls[1]) -- unpack is a garbage function and can't be used in the middle of a return
-                return true, time, name, roll, max_roll, DRUDB.requests[target_name].info["opp_wager"]
-            else
-                return false, 0, nil, 0, 0, 0
+                return true, time, name, roll, max_roll, DRUDB.requests[target_name].info.opp_wager
             end
         end
+        return false, 0, nil, 0, 0, 0
     end
 end
 
@@ -255,6 +254,15 @@ function DRU.GetLastGame() -- returns most recent game, ongoing or not
     return DRUDB.games[#DRUDB.games]
 end
 
+function DRU.GetCurrOppWager()
+    C_Timer.After(1, function() end)
+    local curr_game = DRUDB.games[#DRUDB.games]
+    local wager = curr_game.info.opp_wager
+    if wager == nil then wager = 0 end
+
+    return wager
+end
+
 function DRU.GetStats() -- returns all stats for the GUI
     DRUDB.global_stats = DRUDB.global_stats or {}
     local wins = DRUDB.global_stats["total_wins"]
@@ -310,7 +318,7 @@ function DRU.GenerateGameID()
     return DRUDB.global_stats["total_wins"] + DRUDB.global_stats["total_losses"] + 1
 end
 
-SLASH_DEATHROLLGAMES1 = "/drgame" -- TODO: ADD DISPLAY WAGERS
+SLASH_DEATHROLLGAMES1 = "/drgame"
 SLASH_DEATHROLLGAMES2 = "/drgames"
 SlashCmdList["DEATHROLLGAMES"] = function()
     if next(DRUDB.requests) ~= nil then

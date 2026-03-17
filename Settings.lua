@@ -6,10 +6,10 @@ function DRU.Settings_Init()
     DRU.settingsCategory = Settings.RegisterVerticalLayoutCategory("DeathRoll Unlocked")
 
     -- template setting
-    local save_history = "save_history"
+    local example_setting = "example_setting"
     local defaultValue = true
 
-    Settings.RegisterAddOnSetting(DRU.settingsCategory, save_history, save_history, DRU.settings, type(defaultValue), "Save Roll History", defaultValue)
-    Settings.CreateCheckbox(DRU.settingsCategory, Settings.GetSetting(save_history), "Temporary example setting. Does not work currently.")
+    Settings.RegisterAddOnSetting(DRU.settingsCategory, example_setting, example_setting, DRU.settings, type(defaultValue), "Example Setting", defaultValue)
+    Settings.CreateCheckbox(DRU.settingsCategory, Settings.GetSetting(example_setting), "Temporary example setting. Does not work currently.")
     Settings.RegisterAddOnCategory(DRU.settingsCategory)
 end
