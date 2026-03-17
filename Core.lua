@@ -12,7 +12,7 @@ local target_name = nil
 
 -- game states
 DRU.gamestate = {in_game = false, curr_game = nil, my_turn = false, curr_opp = nil, my_wager = 0, opp_wager = 0, last_roller = nil, last_roll = 0}
-local random_rolls = {}
+DRU.random_rolls = {}
 local gs = DRU.gamestate
 local my_request_pending = false
 local player_targeted = false
@@ -27,19 +27,18 @@ local scam_check
 local scam_alert
 local send_addon_data
 local result_check
-local party_check
 local chat_roll_check
 local roll_check
 local wager_check
-local opp_wager_check
 local stringify
+local pre_game
 
 local addon_loader = CreateFrame("Frame")
 addon_loader:RegisterEvent("ADDON_LOADED")
 addon_loader:SetScript("OnEvent", function(self, event, addon_name)
     if addon_name == "DeathRollUnlocked" then -- every function here needs SavedVariables to be fully loaded and ready before initializing.
-        DRU.GetGameState()
         DRU.DB_Init()
+        DRU.GetGameState()
         DRU.Settings_Init()
         DRU.UI_Init(gs.in_game, gs.my_turn)
     end
@@ -74,7 +73,9 @@ channel_listener:SetScript("OnEvent", function(self, event, prefix, message, cha
         elseif msg_type == "AcceptRequest" then -- confirms msg we accept their game
             DRU.print(string.format("%s accepts your deathroll!", sender))
             if opp_wager > gs.my_wager then
-                DRU.print(string.format("%s bets %d against your %dg!", sender, opp_wager, gs.my_wager))
+                DRU.print(string.format("%s bets %dg against your %dg!", sender, opp_wager, gs.my_wager))
+            elseif opp_wager < gs.my_wager then
+                DRU.print(string.format("%s is only betting %dg against your %dg.", sender, opp_wager, gs.my_wager))
             end
             DRU.AddWager(opp_wager, "Opp")
 
@@ -91,7 +92,7 @@ end)
 
 -- wrapper function for sending messages through addon channel
 function send_addon_data(message, channel, target, sender)
-    if not message or message == "" then -- safety check!
+    if not message or message == "" then
         if DRU.DEBUG then print("send_addon_data had no message and was not sent.") end
     elseif channel == "WHISPER" and target then
         C_ChatInfo.SendAddonMessage(prefix, message, "WHISPER", target)
@@ -112,7 +113,7 @@ function DRU.ParseRoll(msg)
     local history_type = nil -- in what way to add roll to history
     local print_result = "" -- lose/win prints
     local result = nil -- added to history
-    local roller, roll_str, min_roll_str, max_roll_str = string.match(msg, "^(.-) rolls (%d+) %((%d+)-(%d+)%)$") -- transform from string to information
+    local roller, roll_str, min_roll_str, max_roll_str = string.match(msg, "^(.-) rolls (%d+) %((%d+)-(%d+)%)$") -- parse msg for roll info
     local roll = tonumber(roll_str)
     local min_roll = tonumber(min_roll_str)
     local max_roll = tonumber(max_roll_str)
@@ -131,13 +132,9 @@ function DRU.ParseRoll(msg)
             if roll_index ~= 1 then -- the second roll should not be explicitely counted as a scam roll, because we cannot verify that the roll was purposed for our request with certainty.
                 scam_alert(scam_type, roller, min_roll, max_roll, exp_roll)
             end
-            if DRU.DEBUG then print("Right opp, wrong roll. Returning...") end
+            -- if DRU.DEBUG then print("Right opp, wrong roll. Returning...") end
             return
         else
-            if (roll_index == 1) and (roller ~= DRU.me) then -- on their response to our first roll, check if their wager is lower
-                C_Timer.After(1, function() opp_wager_check() end)
-            end
-
             result, print_result, history_type = result_check(roll, roller)
             DRU.LuckCheck(roll, max_roll, roller)
 
@@ -148,14 +145,8 @@ function DRU.ParseRoll(msg)
 
     else -- it's a roll for which we do not know the purpose
         if roller ~= DRU.me then
-            C_Timer.After(1, function() -- wait 1 second for any possible requests to process
-                local found = DRU.RequestCheck(roller)
-                if not found then
-                    if DRU.DEBUG then print("Adding random roll to table...") end
-                    random_rolls[roller] = {time(), roller, roll, max_roll} -- save with roller as key so only the most recent roll is known
-                return
-                end
-            end)
+            if DRU.DEBUG then print("Adding random roll to table...") end
+            DRU.random_rolls[roller] = {time(), roller, roll, max_roll} -- save with roller as key so only the most recent roll is known
         end
     end
 
@@ -168,7 +159,7 @@ function DRU.ParseRoll(msg)
     end
 end
 
-function attempt_game_start(my_max_roll, my_wager, source)
+function attempt_game_start(my_max_roll, my_wager)
     local is_valid_target, target_name, err_msg = target_check()
     if not is_valid_target then
         if DRU.DEBUG then print("Invalid target.") end
@@ -182,6 +173,7 @@ function attempt_game_start(my_max_roll, my_wager, source)
     local is_valid_roll, err_msg = roll_check(my_max_roll, target_roll, target_name, is_target_request_pending, target_wager)
     if not is_valid_roll then
         if DRU.DEBUG then print("Invalid roll.") end
+        DRU.UpdateTextbox(0, "")
         DRU.print(err_msg)
         return
     end
@@ -189,6 +181,7 @@ function attempt_game_start(my_max_roll, my_wager, source)
     local is_valid_wager, my_new_wager, err_msg = wager_check(my_wager, target_wager, target_name, is_target_request_pending) -- redefine my_wager because we auto-match target's wager if we bet 0.
     if not is_valid_wager then
         if DRU.DEBUG then print("Invalid wager.") end
+        DRU.UpdateTextbox(0, "")
         DRU.print(err_msg)
         return
     end
@@ -203,6 +196,7 @@ function attempt_game_start(my_max_roll, my_wager, source)
         my_max_roll = target_roll
     end
 
+    DRU.UpdateTextbox(0, "") -- clear  focus and reset text
     DRU.gamestate.my_wager = my_new_wager
     do_roll(game_type, target_name, my_max_roll, my_new_wager)
 end
@@ -224,7 +218,7 @@ function roll_check(my_roll, exp_roll, target_name, pending_request, target_wage
         end
     end
 
-    if DRU.DEBUG then print("roll_check:",result, err_msg) end
+    -- if DRU.DEBUG then print("roll_check:",result, err_msg) end
     return result, err_msg
 end
 
@@ -238,43 +232,17 @@ function wager_check(my_wager, target_wager, target_name, pending_request)
     end
 
     if pending_request then
-        if (my_wager < target_wager) and (my_wager ~= 0) then
-            result = false
-            err_msg = string.format("You can't bet less than your opponent (%dg). Please try again.", target_wager)
-        elseif (my_wager == 0) and target_wager then
+        if (my_wager == 0) and target_wager then
             my_wager = target_wager
+        elseif (my_wager < target_wager) and (my_wager ~= 0) then
+            DRU.print(string.format("You are only betting %dg against %s's %dg. Coward.", my_wager, target_name, target_wager))
         elseif my_wager > target_wager then
-            err_msg = string.format("You are betting %dg against %s's %dg!", my_wager, target_name, target_wager)
+            DRU.print(string.format("You are betting %dg against %s's %dg!", my_wager, target_name, target_wager))
         end
     end
 
-    if DRU.DEBUG then print("wager_check:", result, err_msg) end
+    -- if DRU.DEBUG then print("wager_check:", result, err_msg) end
     return result, my_wager, err_msg
-end
-
--- button functionality
-function DRU.button_click()
-    DRU.GetGameState()
-    if gs.in_game then
-        if gs.my_turn == false then
-            DRU.print("It's not your turn.")
-        else
-            DRU.textbox:SetText("") -- if we're in game we don't care what the textbox has.
-            DRU.textbox:ClearFocus()
-            do_roll("Roll", gs.curr_opp, gs.last_roll)
-        end
-        
-    else -- not in game
-        local roll, wager
-        if DRU.textbox:GetText() == "" then 
-            roll, wager = 0, 0 
-        else
-            roll, wager = strsplit(" ", DRU.textbox:GetText())
-            roll = roll or 0
-            wager = wager or 0
-        end
-        attempt_game_start(tonumber(roll), tonumber(wager), "Button")
-    end
 end
 
 function do_roll(type, target_name, roll, wager)
@@ -340,11 +308,11 @@ function target_check() -- checks if player targeted, if they're in our group, a
 end
 
 function chat_roll_check(starting_roll, target)
-    for _, roll_table in pairs(random_rolls) do -- now we check if our roll happens to be a response to a random /roll in chat
+    for _, roll_table in pairs(DRU.random_rolls) do -- now we check if our roll happens to be a response to a random /roll in chat
         if (roll_table[3] == starting_roll) and (roll_table[2] == target) then
             if DRU.debug then print("Detected random roll as starting roll.") end
             DRU.HistoryChange("NewRequest", roll_table[2], roll_table[3], roll_table[4], time(), nil, roll_table[2], 0)
-            random_rolls[roll_table] = nil
+            DRU.random_rolls[roll_table] = nil
             return true
         end
     end
@@ -370,7 +338,6 @@ end
 
 function end_game() -- should activate if a game ends; resets globals to default
     my_request_pending = false
-    DRU.StreakCheck()
     DRU.ButtonUpdate(gs.in_game, gs.my_turn)
 end
 
@@ -399,13 +366,6 @@ function scam_alert(scam_type, scammer, min_roll, max_roll, exp_roll)
     end
 end
 
-function opp_wager_check() -- checks if opponents wager is less than ours at start of roll
-    local wager = DRU.GetCurrOppWager()
-    if wager < gs.my_wager then
-        print("SHIIIAAAAATTT")
-    end
-end
-
 function stringify(wager)
     if wager == 0 then wager = "fun"
     else wager = (wager.."g")
@@ -420,18 +380,10 @@ function DRU.print(msg)
     end
 end
 
--- COMMANDS
-SLASH_DEATHROLLTRY1 = "/drtry" -- dev tool
-SlashCmdList["DEATHROLLTRY"] = function()
-    target_check()
-end
-
-SLASH_DEATHROLL1 = "/dr"
-SLASH_DEATHROLL2 = "/deathroll"
-SlashCmdList["DEATHROLL"] = function(msg) -- msg is whatever player types after cmd
+function pre_game(msg)
     DRU.GetGameState()
     local roll, wager
-        if msg == "" then 
+        if msg == "" then
             roll, wager = 0, 0
         else
             roll, wager = strsplit(" ", msg)
@@ -445,6 +397,7 @@ SlashCmdList["DEATHROLL"] = function(msg) -- msg is whatever player types after 
         if gs.my_turn == false then
             DRU.print("It's not your turn.")
         else
+            DRU.UpdateTextbox(0, "")
             if (roll ~= 0) and (roll ~= gs.last_roll) then
                 DRU.print("That's not the right roll.")
             elseif (wager ~= 0) then
@@ -455,8 +408,24 @@ SlashCmdList["DEATHROLL"] = function(msg) -- msg is whatever player types after 
         end
 
     else -- not in game
-        attempt_game_start(tonumber(roll), tonumber(wager), "Command")
+        attempt_game_start(tonumber(roll), tonumber(wager))
     end
+end
+
+function DRU.ButtonClick()
+    pre_game(DRU.textbox:GetText())
+end
+
+-- COMMANDS
+SLASH_DEATHROLLTRY1 = "/drtry" -- dev tool
+SlashCmdList["DEATHROLLTRY"] = function()
+    target_check()
+end
+
+SLASH_DEATHROLL1 = "/dr"
+SLASH_DEATHROLL2 = "/deathroll"
+SlashCmdList["DEATHROLL"] = function(msg) -- msg is whatever player types after cmd
+    pre_game(msg)
 end
 
 SLASH_RELOADUI1 = "/rl" -- quick reload
@@ -465,7 +434,6 @@ SlashCmdList.RELOADUI = ReloadUI
 SLASH_DEATHROLLCANCEL1 = "/drcancel"
 SlashCmdList["DEATHROLLCANCEL"] = function()
     local roll_index = DRU.GetRollIndex()
-    local player = DRU.GetRoll()
 
     if gs.in_game then
         if roll_index == 1 then

@@ -17,10 +17,10 @@ local edit_page
 local init_hist_entry
 local edit_hist_entry
 local update_page_info
-local arrow
-local disable_arrow
+local change_page
 local display_game
 local add_row
+local calc_page_ends
 
 -- text
 local stats_text = [[
@@ -31,6 +31,10 @@ Games Lost: %d
 Total Gold Earned: %dg
 Worst Roll: %s
 Longest Streak of 2's: %d
+Longest Win Streak: %d
+Longest Loss Streak: %d
+Biggest Win: %dg
+Biggest Loss: %dg
 ]]
 
 local finance_text = [[
@@ -146,7 +150,7 @@ MH:SetSize(263, 240)
 MH.page_num = 0
 
 function DRU.UpdateMatchHistory()
-    
+    update_page_info()
 end
 
 -- this is if u want to see the area of the match_history_frame
@@ -159,53 +163,28 @@ MH.left_arr = CreateFrame("Button", nil, MH, "UIPanelButtonTemplate")
 MH.left_arr:SetPoint("BOTTOMLEFT", -2, 0)
 MH.left_arr:SetSize(28, 28)
 MH.left_arr:SetNormalTexture("Interface\\Buttons\\UI-SpellbookIcon-PrevPage-Up")
-MH.left_arr:SetScript("OnClick", function() arrow(-1) end)
+MH.left_arr:SetScript("OnClick", function() change_page(-1) end)
 
 MH.right_arr = CreateFrame("Button", nil, MH, "UIPanelButtonTemplate")
 MH.right_arr:SetPoint("BOTTOMRIGHT")
 MH.right_arr:SetSize(28, 28)
 MH.right_arr:SetNormalTexture("Interface\\Buttons\\UI-SpellbookIcon-NextPage-Up")
-MH.right_arr:SetScript("OnClick",function() arrow(1) end)
+MH.right_arr:SetScript("OnClick", function() change_page(1) end)
 
-function arrow(dir)
-    MH.page_num = MH.page_num + dir
-    edit_page(MH.page_num)
-    update_page_info()
-end
-
+MH:EnableMouseWheel(true)
+MH:SetScript("OnMouseWheel", function(self, delta) 
+    delta = (delta > 0) and -1 or 1 -- i have to inverse the delta because scrolling down is a negative number
+    change_page(delta)
+end)
 MH.page_num_display = MH:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
 MH.page_num_display:SetScale(1.5)
 MH.page_num_display:SetPoint("BOTTOM", 0, 4)
-
-function update_page_info()
-    MH.page_num_display:SetText(tostring(MH.page_num + 1))
-
-    if MH.page_num == 0 then
-        MH.left_arr:Disable()
-        MH.left_arr:DesaturateHierarchy(1)
-    else
-        MH.left_arr:Enable()
-        MH.left_arr:DesaturateHierarchy(0)
-    end
-
-    local total_games = DRU.GetTotalGameAmount()
-    local last_page = math.floor(total_games / PAGE_LEN)
-    if MH.page_num == last_page then
-        MH.right_arr:Disable()
-        MH.right_arr:DesaturateHierarchy(1)
-    else
-        MH.right_arr:Enable()
-        MH.right_arr:DesaturateHierarchy(0)    
-    end
-end
 
 -- search box
 MH.search_box = CreateFrame("EditBox", nil, MH, "InputBoxTemplate") -- search bar
 MH.search_box:SetSize(175, 30)
 MH.search_box:SetPoint("TOPLEFT", MH, "TOPLEFT", 4, 2)
 MH.search_box:SetAutoFocus(false)
-MH.search_box:SetScript("OnEnterPressed", function(self) -- if enter is pressed, search:
-end)
 MH.search_box_text = MH.search_box:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall") -- hint text for search bar
 MH.search_box_text:SetPoint("LEFT", MH.search_box, "LEFT")
 MH.search_box_text:SetText("Search for opponents")
@@ -219,10 +198,57 @@ MH.search_box:SetScript("OnEditFocusLost", function(self)
         MH.search_box_text:Show()
     end
 end)
-MH.search_box:SetScript("OnEnterPressed", function() edit_page(0) end)
+MH.search_box:SetScript("OnKeyUp", function() edit_page(0) end)
 
 MH.page = CreateFrame("Frame", nil, MH)
 MH.page.games = {}
+
+function update_page_info(is_first_page, is_last_page)
+    MH.page_num_display:SetText(tostring(MH.page_num + 1))
+    if is_first_page == nil then -- on startup this gets no args: CHECK IF THIS WORKS
+        is_first_page, is_last_page = calc_page_ends()
+    end
+
+    if is_first_page then
+        MH.left_arr:Disable()
+        MH.left_arr:DesaturateHierarchy(1)
+    else
+        MH.left_arr:Enable()
+        MH.left_arr:DesaturateHierarchy(0)
+    end
+
+    if is_last_page then
+        MH.right_arr:Disable()
+        MH.right_arr:DesaturateHierarchy(1)
+    else
+        MH.right_arr:Enable()
+        MH.right_arr:DesaturateHierarchy(0)    
+    end
+end
+
+function calc_page_ends() -- calculates if we are on the first and/or last page of our match history
+    local is_first_page, is_last_page = false, false
+    local curr_page = MH.page_num
+    local total_games = DRU.GetTotalGameAmount()
+    local last_page = math.floor(total_games / PAGE_LEN)
+
+    if curr_page == 0 then is_first_page = true end
+    if curr_page == last_page then is_last_page = true end
+
+    return is_first_page, is_last_page
+end
+
+function change_page(dir) -- changes page; -1 == prev, 1 == next
+    local is_first_page, is_last_page = calc_page_ends()
+
+    if (is_first_page and dir == -1) or (is_last_page and dir == 1) then
+        return
+    end
+
+    MH.page_num = MH.page_num + dir
+    edit_page(MH.page_num)
+    update_page_info()
+end
 
 function init_hist_entry(y_pos, num) -- creates 1 game entry "preset" at given y_pos
     MH.page.games[num] = CreateFrame("Button", nil, MH.page)
@@ -266,6 +292,7 @@ end
 
 function edit_page(page) -- wrapper for for loop
     local opp_search = MH.search_box:GetText()
+
     local page_data = DRU.GetMatchHistoryPage(page, PAGE_LEN, opp_search)
     for i = 1, PAGE_LEN + 1 do
         if page_data[i] then
@@ -378,12 +405,12 @@ tabFrames[2]:SetAllPoints(contentArea)
 tabFrames[2].text = tabFrames[2]:CreateFontString(nil,"OVERLAY","GameFontNormal")
 tabFrames[2].text:SetPoint("TOPLEFT", 6, -6)
 tabFrames[2].text:SetJustifyH("LEFT")
-tabFrames[2].text:SetJustifyV("TOP") 
+tabFrames[2].text:SetJustifyV("TOP")
 
 function DRU.UpdateStats() -- TODO: right now every game updates all of the stats no matter what. can i individually update stats?
-    local total, win_rate, wins, losses, gold, worst_roll, streak = DRU.GetStats()
+    local total, win_rate, wins, losses, gold, worst_roll, two_streak, win_streak, loss_streak, most_won, most_lost = DRU.GetStats()
 
-    tabFrames[2].text:SetText(string.format(stats_text, total, win_rate, wins, losses, gold, worst_roll, streak))
+    tabFrames[2].text:SetText(string.format(stats_text, total, win_rate, wins, losses, gold, worst_roll, two_streak, win_streak, loss_streak, most_won, most_lost))
 end
 
 tabFrames[2]:Hide()
@@ -463,7 +490,7 @@ button:SetPoint("BOTTOM", button_frame, "CENTER", 0, 0)
 button:SetScript("OnMouseDown", OnDragStart) -- button middle mouse button can move the frame
 button:SetScript("OnMouseUp", OnDragStop)
 button:SetScript("OnClick", function(self, button)
-    DRU.button_click()
+    DRU.ButtonClick()
 end)
 
 -- button_text is called after we know gamestate

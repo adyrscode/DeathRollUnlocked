@@ -5,8 +5,8 @@ function DRU.DB_Init()
     if not DRUDB or (DRUDB == nil) or (type(DRUDB) ~= "table") then
         DRUDB = {}
     end
-    DRUDB.global_stats = DRUDB.global_stats or 
-    {total_wins = 0, total_losses = 0, total_gold = 0, worst_roll = 0, longest_streak = 0}
+    DRUDB.global_stats = DRUDB.global_stats or
+    {total_wins = 0, total_losses = 0, total_gold = 0, worst_roll = 0, two_streak = 0, win_streak = 0, loss_streak = 0, most_won = 0, most_lost = 0}
     DRUDB.games = DRUDB.games or {}
     DRUDB.requests = DRUDB.requests or {}
 end
@@ -53,6 +53,7 @@ function DRU.HistoryChange(type, player, roll, max_roll, time, result, opp, wage
         
     elseif type == "NewRequest" then -- always from another player
         DRUDB.requests[player] = {info = {opp = player, result = nil, my_wager = 0, opp_wager = wager, id = DRU.GenerateGameID()}, rolls = {{time, player, roll, max_roll}}} -- nested table for smooth & easy data transfer
+        if DRU.random_rolls[player] then DRU.random_rolls[player] = nil end
     
     elseif type == "MoveRequest" then
         table.insert(DRUDB.games, DRUDB.requests[player])
@@ -77,19 +78,16 @@ function DRU.HistoryChange(type, player, roll, max_roll, time, result, opp, wage
             DRUDB.global_stats["total_losses"] = DRUDB.global_stats["total_losses"] + 1
             DRUDB.global_stats["total_gold"] = DRUDB.global_stats["total_gold"] - DRUDB.games[#DRUDB.games].info.my_wager 
             DRUDB.games[#DRUDB.games].info.result = "Loss"
-            DRU.GetGameState()
-            DRU.UpdateStats()
+            DRU.EndGame()
 
     elseif type == "FastWin" then -- special case for when someone rolls us and immediately rolls 1
-        print("Opp:", opp, "Player:", player)
         if DRUDB.global_stats.total_gold == nil then DRUDB.global_stats.total_gold = 0 end -- TODO: what if our opponent is already in the middle of a deathroll?
         table.insert(DRUDB.games, {info = {opp = opp, result = "Win", my_wager = 0, opp_wager = wager, id = DRU.GenerateGameID()}, rolls = {{time, player, roll, max_roll}}})
         if DRUDB.global_stats.total_losses == nil then DRUDB.global_stats.total_losses = 0 end
             DRUDB.global_stats["total_wins"] = DRUDB.global_stats["total_wins"] + 1
             DRUDB.global_stats["total_gold"] = DRUDB.global_stats["total_gold"] + DRUDB.games[#DRUDB.games].info.opp_wager 
             DRUDB.games[#DRUDB.games].info.result = "Win"
-            DRU.GetGameState()
-            DRU.UpdateStats()
+            DRU.EndGame()
 
     elseif type == "EndGame" then
         if DRUDB.global_stats.total_gold == nil then DRUDB.global_stats.total_gold = 0 end
@@ -112,10 +110,18 @@ function DRU.HistoryChange(type, player, roll, max_roll, time, result, opp, wage
             table.remove(DRUDB.games, #DRUDB.games) -- if i don't do it like this it doesn't work and idk why lol
         end
         table.insert(curr_game.rolls, {time, player, roll, max_roll}) -- if it's ending the game we always add the roll
-        DRU.GetGameState() -- when a game ends we need to update gamestate
-        DRU.UpdateStats() -- this is for gui. TODO: make clear in the function that it's gui related
-        DRU.UpdateCurrPage()
+        DRU.EndGame()
     end
+end
+
+function DRU.EndGame()
+    DRU.GetGameState() -- when a game ends we need to update gamestate for core.lua
+    DRU.UpdateCurrPage() -- match history GUI update
+    DRU.TwoStreakCheck() -- checks for stats
+    DRU.GameStreakCheck()
+    DRU.BigWagerCheck()
+    DRU.UpdateStats() -- this is for gui. TODO: make clear in the function that it's gui related
+    DRU.UpdateMatchHistory()
 end
 
 function DRU.RequestCheck(target_name) -- checks if target selected is in request list, and gives back all bool, time, player, roll, maxroll, wager
@@ -217,7 +223,7 @@ function DRU.GetMatchHistoryPage(page_num, page_len, opp_search)
             gold_str = string.concat(tostring(-DRUDB.games[i].info.my_wager), "g")
         end
 
-        if (opp == opp_search) or (opp_search == "") then
+        if (opp_search == "") or (string.find(string.lower(opp), string.lower(opp_search))) then
             table.insert(my_games, {id, opp, result, gold_str})
         end
     end
@@ -271,7 +277,11 @@ function DRU.GetStats() -- returns all stats for the GUI
     local gold = DRUDB.global_stats["total_gold"]
     local worst_roll = DRUDB.global_stats["worst_roll"]
     local win_rate_str = ""
-    local streak = DRUDB.global_stats["longest_streak"]
+    local two_streak = DRUDB.global_stats["two_streak"]
+    local win_streak = DRUDB.global_stats["win_streak"]
+    local loss_streak = DRUDB.global_stats["loss_streak"]
+    local most_won = DRUDB.global_stats["most_won"]
+    local most_lost = DRUDB.global_stats["most_lost"]
     
     if total > 0 then
         win_rate_str = string.format("%.2f%%", (wins / (wins + losses) * 100))
@@ -286,10 +296,10 @@ function DRU.GetStats() -- returns all stats for the GUI
         worst_roll = string.format("You rolled 1 out of %d.", temp_roll, temp_roll)
     end
 
-    return total, win_rate_str, wins, losses, gold, worst_roll, streak
+    return total, win_rate_str, wins, losses, gold, worst_roll, two_streak, win_streak, loss_streak, most_won, most_lost
 end
 
-function DRU.StreakCheck() -- sees if there's a long streak of 2 rolls
+function DRU.TwoStreakCheck() -- sees if there's a long streak of 2 rolls
     local last_game = DRUDB.games[#DRUDB.games]
     if not last_game then return end
     
@@ -299,8 +309,8 @@ function DRU.StreakCheck() -- sees if there's a long streak of 2 rolls
             streak = streak + 1
         end
     end
-    if streak > DRUDB.global_stats["longest_streak"] then
-        DRUDB.global_stats["longest_streak"] = streak
+    if streak > DRUDB.global_stats["two_streak"] then
+        DRUDB.global_stats["two_streak"] = streak
     end
 end
 
@@ -311,6 +321,38 @@ function DRU.LuckCheck(roll, max_roll, roller) -- checks if roll is the unluckie
                 DRUDB.global_stats["worst_roll"] = max_roll
             end
         end
+    end
+end
+
+function DRU.GameStreakCheck() -- goes through most recent games to see if you're on a win/loss streak
+    local streak_type -- a win or a loss
+    local streak = 0
+    
+    for i = #DRUDB.games, 1, -1 do
+        local game = DRUDB.games[i]
+        if i == #DRUDB.games then streak_type = game.info.result end
+
+        if game.info.result == streak_type then
+            streak = streak + 1
+        else
+            break
+        end
+    end
+    
+    local streak_key = (streak_type == "Loss") and "loss_streak" or "win_streak"
+    if streak > DRUDB.global_stats[streak_key] then
+        DRUDB.global_stats[streak_key] = streak
+    end
+end
+
+function DRU.BigWagerCheck()
+    local game = DRUDB.games[#DRUDB.games]
+
+    local result_key = (game.info.result == "Win") and "most_won" or "most_lost"
+    local wager_key = (game.info.result == "Win") and "my_wager" or "opp_wager"
+    
+    if game.info[wager_key] > DRUDB.global_stats[result_key] then
+        DRUDB.global_stats[result_key] = game.info[wager_key]
     end
 end
 
