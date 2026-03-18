@@ -20,7 +20,6 @@ local player_targeted = false
 -- functions
 local do_roll
 local attempt_game_start
-local start_game
 local target_check
 local end_game
 local scam_check
@@ -417,10 +416,6 @@ function DRU.ButtonClick()
 end
 
 -- COMMANDS
-SLASH_DEATHROLLTRY1 = "/drtry" -- dev tool
-SlashCmdList["DEATHROLLTRY"] = function()
-    target_check()
-end
 
 SLASH_DEATHROLL1 = "/dr"
 SLASH_DEATHROLL2 = "/deathroll"

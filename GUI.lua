@@ -6,7 +6,7 @@ local MH
 local GD
 
 -- constants
-local PAGE_LEN = 7 -- amount of games displayed per page in match history - 1.
+local PAGE_LEN = 8 -- amount of games displayed per page in match history
 local TOP_GAME_POS = -28 -- the y_pos of the top game of the page
 local COLORS = {WIN = {normal = {0.1, 0.6, 0.1, 0.60}, hover = {0.2, 0.85, 0.2, 0.75}}, 
                 LOSS = {normal = {0.6, 0.1, 0.1, 0.60}, hover = {0.85, 0.2, 0.2, 0.75}}}
@@ -16,7 +16,6 @@ local make_page
 local edit_page
 local init_hist_entry
 local edit_hist_entry
-local update_page_info
 local change_page
 local display_game
 local add_row
@@ -54,7 +53,7 @@ function DRU.UI_Init(in_game, my_turn)
     DRU.ButtonUpdate(in_game, my_turn)
     make_page()
     edit_page(0) -- load the 0th page
-    update_page_info()
+    DRU.UpdatePageUI()
 end
 
 -- menu window
@@ -150,7 +149,7 @@ MH:SetSize(263, 240)
 MH.page_num = 0
 
 function DRU.UpdateMatchHistory()
-    update_page_info()
+    DRU.UpdatePageUI()
 end
 
 -- this is if u want to see the area of the match_history_frame
@@ -203,9 +202,9 @@ MH.search_box:SetScript("OnKeyUp", function() edit_page(0) end)
 MH.page = CreateFrame("Frame", nil, MH)
 MH.page.games = {}
 
-function update_page_info(is_first_page, is_last_page)
+function DRU.UpdatePageUI(is_first_page, is_last_page)
     MH.page_num_display:SetText(tostring(MH.page_num + 1))
-    if is_first_page == nil then -- on startup this gets no args: CHECK IF THIS WORKS
+    if is_first_page == nil then -- on startup this gets no args so we calc the page ends
         is_first_page, is_last_page = calc_page_ends()
     end
 
@@ -230,7 +229,7 @@ function calc_page_ends() -- calculates if we are on the first and/or last page 
     local is_first_page, is_last_page = false, false
     local curr_page = MH.page_num
     local total_games = DRU.GetTotalGameAmount()
-    local last_page = math.floor(total_games / PAGE_LEN)
+    local last_page = math.floor((total_games - 1) / PAGE_LEN)
 
     if curr_page == 0 then is_first_page = true end
     if curr_page == last_page then is_last_page = true end
@@ -247,7 +246,7 @@ function change_page(dir) -- changes page; -1 == prev, 1 == next
 
     MH.page_num = MH.page_num + dir
     edit_page(MH.page_num)
-    update_page_info()
+    DRU.UpdatePageUI()
 end
 
 function init_hist_entry(y_pos, num) -- creates 1 game entry "preset" at given y_pos
@@ -294,7 +293,7 @@ function edit_page(page) -- wrapper for for loop
     local opp_search = MH.search_box:GetText()
 
     local page_data = DRU.GetMatchHistoryPage(page, PAGE_LEN, opp_search)
-    for i = 1, PAGE_LEN + 1 do
+    for i = 1, PAGE_LEN do
         if page_data[i] then
             local id, opp, result, gold = unpack(page_data[i])
             edit_hist_entry(id, opp, result, gold, i)
@@ -306,7 +305,7 @@ function edit_page(page) -- wrapper for for loop
 end
 
 function make_page() -- wrapper for for loop
-    for i = 1, PAGE_LEN + 1 do
+    for i = 1, PAGE_LEN do
         if i ~= 1 then TOP_GAME_POS = TOP_GAME_POS - 23 end
         init_hist_entry(TOP_GAME_POS, i) -- using the numerator of the for loop to index the list of games
     end
@@ -344,10 +343,10 @@ GD.info.text_2:SetText("Rolls")
 
 GD.scroll = CreateFrame("ScrollFrame", nil, GD, "UIPanelScrollFrameTemplate")
 GD.scroll:SetPoint("TOPLEFT", GD, "TOPLEFT", 0, -80)
-GD.scroll:SetSize(240, 155)
+GD.scroll:SetSize(250, 155)
 
 GD.roll_frame = CreateFrame("Frame", nil, GD.scroll)
-GD.roll_frame:SetSize(220, 155)
+GD.roll_frame:SetSize(230, 155)
 GD.scroll:SetScrollChild(GD.roll_frame)
 
 -- GD.scroll.bg = GD.scroll:CreateTexture(nil, "BACKGROUND")
@@ -397,6 +396,11 @@ function display_game(game)
     for i = last_row + 1, #GD.rolls do -- hide all the rows after the last one
         GD.rolls[i]:Hide()
     end
+
+    -- nah
+    -- if GD.scroll:GetVerticalScrollRange() == 0 then
+    --     GD.scroll:Hide()
+    -- end
 end
 
 -- Statistics

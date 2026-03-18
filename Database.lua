@@ -203,7 +203,6 @@ function DRU.GetRoll(player) -- returns roller, roll, max_roll
 end
 
 function DRU.GetMatchHistoryPage(page_num, page_len, opp_search)
-    -- off by 1: page_len is always 1 lower than the actual page length
     local page_start = #DRUDB.games - (page_num * page_len) -- am i secretly a math genius?
     local page_end = page_start - page_len
     if page_end < 1 then page_end = 1 end
@@ -360,6 +359,12 @@ function DRU.GenerateGameID()
     return DRUDB.global_stats["total_wins"] + DRUDB.global_stats["total_losses"] + 1
 end
 
+-- COMMANDS
+SLASH_DEATHROLLTRY1 = "/drtry" -- dev tool
+SlashCmdList["DEATHROLLTRY"] = function()
+    print(#DRUDB.games)
+end
+
 SLASH_DEATHROLLGAMES1 = "/drgame"
 SLASH_DEATHROLLGAMES2 = "/drgames"
 SlashCmdList["DEATHROLLGAMES"] = function()
@@ -389,4 +394,20 @@ SLASH_DEATHROLLWIPE2 = "/drw"
 SlashCmdList["DEATHROLLWIPE"] = function()
     table.wipe(DRUDB)
     ReloadUI()
+end
+
+SLASH_DEATHROLLDEL1 = "/drdel"
+SlashCmdList["DEATHROLLDEL"] = function(msg)
+    if not DRU.DEBUG then
+        DRU.print("That's a dev command buddy :)")
+        return
+    end
+
+    local del_amount = tonumber(msg)
+
+    for i = 1, del_amount do
+        table.remove(DRUDB.games, i)
+    end
+    DRU.UpdateCurrPage()
+    DRU.UpdatePageUI()
 end
