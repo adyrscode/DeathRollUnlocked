@@ -1,9 +1,16 @@
 DeathRollUnlocked = DeathRollUnlocked or {}
 local DRU = DeathRollUnlocked
 
--- GUI things
-local MH
-local GD
+-- GUI things & shorthands
+local MH -- match history
+local GD -- game details
+local ST -- settings (assigned later to DRUDB.settings)
+local GS = DRU.gamestate
+
+local is_button_initialized = false
+local is_menu_initialized = false
+local button
+local textbox
 
 -- constants
 local PAGE_LEN = 8 -- amount of games displayed per page in match history
@@ -27,6 +34,7 @@ Total Games Played: %d
 Win Rate: %s
 Games Won: %d
 Games Lost: %d
+
 Total Gold Earned: %dg
 Worst Roll: %s
 Longest Streak of 2's: %d
@@ -49,11 +57,21 @@ Your Wager: %s
 
 -- anything which needs DRUDB should be listed as a function here.
 function DRU.UI_Init(in_game, my_turn)
-    DRU.UpdateStats()
-    DRU.ButtonUpdate(in_game, my_turn)
-    make_page()
-    edit_page(0) -- load the 0th page
-    DRU.UpdatePageUI()
+    ST = DRUDB.settings
+    if ST.dr_button then
+        DRU.InitButton()
+        DRU.ButtonUpdate(in_game, my_turn)
+    end
+    
+    if ST.dr_menu then
+        make_page()
+        edit_page(0) -- load the 0th page
+        DRU.UpdatePageUI()
+        DRU.menu:Show()
+        DRU.UpdateStats()
+    else
+        DRU.menu:Hide()
+    end
 end
 
 -- menu window
@@ -79,7 +97,7 @@ titleBar:SetHeight(24)
 titleBar:SetColorTexture(0.1, 0.1, 0.13, 0.95)
 DRU.menu.title = DRU.menu:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
 DRU.menu.title:SetPoint("LEFT", titleBar, "CENTER", -80, 0)
-DRU.menu.title:SetText("Deathroll Unlocked")
+DRU.menu.title:SetText("DeathRoll Unlocked")
 
 -- close button
 local close = CreateFrame("Button", nil, DRU.menu, "UIPanelCloseButton")
@@ -130,8 +148,6 @@ local function make_tab(name) -- this is done by chatGPT i hate UI programming
 
     return b
 end
-
-
 
 -- History
 tabFrames[1] = CreateFrame("Frame", nil, contentArea)
@@ -410,6 +426,7 @@ tabFrames[2].text = tabFrames[2]:CreateFontString(nil,"OVERLAY","GameFontNormal"
 tabFrames[2].text:SetPoint("TOPLEFT", 6, -6)
 tabFrames[2].text:SetJustifyH("LEFT")
 tabFrames[2].text:SetJustifyV("TOP")
+tabFrames[2].text:SetScale(1.2)
 
 function DRU.UpdateStats() -- TODO: right now every game updates all of the stats no matter what. can i individually update stats?
     local total, win_rate, wins, losses, gold, worst_roll, two_streak, win_streak, loss_streak, most_won, most_lost = DRU.GetStats()
@@ -456,71 +473,85 @@ SetTab(1) -- default to History
 DRU.menu:Show()
 
 -- Create draggable parent frame for button
-local button_frame = CreateFrame("Frame", "DeathrollFrame", UIParent, "BackdropTemplate")
-button_frame:SetSize(100, 40)
-button_frame:SetPoint("CENTER", -100, -50)
-button_frame:SetBackdrop({
-    bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
-    edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-    edgeSize = 12,
-    insets = { left = 2, right = 2, top = 2, bottom = 2 }
-})
-local function OnDragStart(self, button)
-    if button == "MiddleButton" then
-        button_frame:StartMoving()
+function DRU.InitButton()
+    DRU.button_frame = CreateFrame("Frame", "DeathrollFrame", UIParent, "BackdropTemplate")
+    DRU.button_frame:SetSize(100, 40)
+    DRU.button_frame:SetPoint("CENTER", -100, -50)
+    DRU.button_frame:SetBackdrop({
+        bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
+        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+        edgeSize = 12,
+        insets = { left = 2, right = 2, top = 2, bottom = 2 }
+    })
+    local function OnDragStart(self, button)
+        if button == "MiddleButton" then
+            DRU.button_frame:StartMoving()
+        end
+    end
+    local function OnDragStop(self, button)
+        if button == "MiddleButton" then
+            DRU.button_frame:StopMovingOrSizing()
+        end
+    end
+    DRU.button_frame:SetBackdropColor(0, 0, 0, 0)
+    DRU.button_frame:SetBackdropBorderColor(0, 0, 0, 0)
+    DRU.button_frame:SetMovable(true)
+    DRU.button_frame:EnableMouse(true)
+    DRU.button_frame:RegisterForDrag("MiddleButton")
+    DRU.button_frame:SetScript("OnDragStart", DRU.button_frame.StartMoving)
+    DRU.button_frame:SetScript("OnDragStop", DRU.button_frame.StopMovingOrSizing)
+    DRU.button_frame:SetScript("OnMouseDown", OnDragStart)
+    DRU.button_frame:SetScript("OnMouseUp", OnDragStop)
+
+    -- Create the Deathroll button inside the frame
+    DRU.button = CreateFrame("Button", nil, DRU.button_frame, "UIPanelButtonTemplate")
+    button = DRU.button
+    button:SetSize(100, 30)
+    button:SetPoint("BOTTOM", DRU.button_frame, "CENTER", 0, 0)
+    button:SetScript("OnMouseDown", OnDragStart) -- middle mouse button can move the frame
+    button:SetScript("OnMouseUp", OnDragStop)
+    button:SetScript("OnClick", function(self, button)
+        DRU.ButtonClick()
+    end)
+
+    -- create the textbox
+    DRU.textbox = CreateFrame("EditBox", nil, DRU.button_frame, "InputBoxTemplate") -- TODO: change to 2 textboxes, 1 for roll and 1 for wager (?)
+    textbox = DRU.textbox
+    textbox:SetSize(94, 30)
+    textbox:SetPoint("CENTER", DRU.button_frame, "CENTER", 3, -8)
+    textbox:SetAutoFocus(false)
+    textbox:SetScript("OnEnterPressed", function(self)
+        DRU.ButtonClick()
+    end)
+    is_button_initialized = true
+end
+
+function DRU.ToggleButton(value)
+    if not is_button_initialized then
+        DRU.InitButton()
+        DRU.ButtonUpdate(GS.in_game, GS.my_turn)
+    end
+
+    if value then
+        DRU.button_frame:Show()
+    else
+        DRU.button_frame:Hide()
     end
 end
-local function OnDragStop(self, button)
-    if button == "MiddleButton" then
-        button_frame:StopMovingOrSizing()
-    end
-end
-button_frame:SetBackdropColor(0, 0, 0, 0) 
-button_frame:SetBackdropBorderColor(0, 0, 0, 0)
-button_frame:SetMovable(true)
-button_frame:EnableMouse(true)
-button_frame:RegisterForDrag("MiddleButton")
-button_frame:SetScript("OnDragStart", button_frame.StartMoving)
-button_frame:SetScript("OnDragStop", button_frame.StopMovingOrSizing)
-button_frame:Show()
-button_frame:SetScript("OnMouseDown", OnDragStart)
-button_frame:SetScript("OnMouseUp", OnDragStop)
 
--- Create the Deathroll button inside the frame
-DRU.button = CreateFrame("Button", nil, button_frame, "UIPanelButtonTemplate")
-local button = DRU.button
-button:SetSize(100, 30)
-button:SetPoint("BOTTOM", button_frame, "CENTER", 0, 0)
-button:SetScript("OnMouseDown", OnDragStart) -- button middle mouse button can move the frame
-button:SetScript("OnMouseUp", OnDragStop)
-button:SetScript("OnClick", function(self, button)
-    DRU.ButtonClick()
-end)
-
--- button_text is called after we know gamestate
 function DRU.ButtonUpdate(in_game, my_turn)
-    if in_game then
-        button:SetText("Roll!")
-        if not my_turn then
-            button:Disable()
+        if in_game then
+            button:SetText("Roll!")
+            if not my_turn then
+                button:Disable()
+            else
+                button:Enable()
+            end
         else
             button:Enable()
+            button:SetText("Start Roll!")
         end
-    else
-        button:Enable()
-        button:SetText("Start Roll!")
     end
-end
-
--- create the textbox
-DRU.textbox = CreateFrame("EditBox", nil, button_frame, "InputBoxTemplate") -- TODO: change to 2 textboxes, 1 for roll and 1 for wager (?)
-local textbox = DRU.textbox
-textbox:SetSize(94, 30)
-textbox:SetPoint("CENTER", button_frame, "CENTER", 3, -8)
-textbox:SetAutoFocus(false)
-textbox:SetScript("OnEnterPressed", function(self)
-    DRU.button_click()
-end)
 
 function DRU.UpdateTextbox(focus, text)
     if focus == 1 then
@@ -534,11 +565,10 @@ end
 
 SLASH_DEATHROLLBUTTON1 = "/drbutton"
 SLASH_DEATHROLLBUTTON2 = "/deathrollbutton"
-SlashCmdList["DEATHROLLBUTTON"] = function() -- hide and show the button
-    if button_frame:IsShown() then
-        button_frame:Hide()
-    else button_frame:Show()
-    end
+SLASH_DEATHROLLBUTTON3 = "/drb"
+SlashCmdList["DEATHROLLBUTTON"] = function()
+    DRU.ToggleButton(not ST.dr_button)
+    ST.dr_button = not ST.dr_button -- if toggled by command we have to manually correct the settings
 end
 
 SLASH_DEATHROLLMENU1 = "/drmenu"

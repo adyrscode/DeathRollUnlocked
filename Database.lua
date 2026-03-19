@@ -1,5 +1,6 @@
 DeathRollUnlocked = DeathRollUnlocked or {}
 local DRU = DeathRollUnlocked
+local ST -- settings
 
 function DRU.DB_Init()
     if not DRUDB or (DRUDB == nil) or (type(DRUDB) ~= "table") then
@@ -9,6 +10,7 @@ function DRU.DB_Init()
     {total_wins = 0, total_losses = 0, total_gold = 0, worst_roll = 0, two_streak = 0, win_streak = 0, loss_streak = 0, most_won = 0, most_lost = 0}
     DRUDB.games = DRUDB.games or {}
     DRUDB.requests = DRUDB.requests or {}
+    ST = DRUDB.settings
 end
 
 function DRU.GetGameState()
@@ -360,11 +362,6 @@ function DRU.GenerateGameID()
 end
 
 -- COMMANDS
-SLASH_DEATHROLLTRY1 = "/drtry" -- dev tool
-SlashCmdList["DEATHROLLTRY"] = function()
-    print(#DRUDB.games)
-end
-
 SLASH_DEATHROLLGAMES1 = "/drgame"
 SLASH_DEATHROLLGAMES2 = "/drgames"
 SlashCmdList["DEATHROLLGAMES"] = function()
