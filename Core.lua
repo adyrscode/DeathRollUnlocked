@@ -15,6 +15,7 @@ local my_request_pending = false
 DRU.me = UnitName("player")
 local GS = DRU.gamestate
 local ST
+local g = "|TInterface\\MoneyFrame\\UI-GoldIcon:0|t"
 
 -- functions
 local do_roll
@@ -28,17 +29,17 @@ local result_check
 local chat_roll_check
 local roll_check
 local wager_check
-local stringify
+local goldify
 local pre_game
 
 local addon_loader = CreateFrame("Frame")
 addon_loader:RegisterEvent("ADDON_LOADED")
 addon_loader:SetScript("OnEvent", function(self, event, addon_name)
     if addon_name == "DeathRollUnlocked" then -- every function here needs SavedVariables to be fully loaded and ready before initializing.
-        DRU.DB_Init()
+        DRU.InitDB()
         DRU.GetGameState()
-        DRU.Settings_Init()
-        DRU.UI_Init(GS.in_game, GS.my_turn)
+        DRU.InitSettings()
+        DRU.InitUI(GS.in_game, GS.my_turn)
         ST = DRUDB.settings
     end
 end)
@@ -58,11 +59,11 @@ channel_listener:SetScript("OnEvent", function(self, event, prefix, message, cha
 
         if msg_type == "GameRequest" then
             if opp_roll == 1 then
-                DRU.print(string.format("%s wanted to deathroll you for %s starting from %d, but they immediately lost!", sender, stringify(opp_wager), opp_max_roll))
+                DRU.print(string.format("%s wanted to deathroll you for %s starting from %d, but they immediately lost!", sender, goldify(opp_wager), opp_max_roll))
                 DRU.HistoryChange("FastWin", sender, opp_roll, opp_max_roll, time(), nil, sender, opp_wager)
             else
-                DRU.print(string.format("%s wants to deathroll you for %s starting from %d!", sender, stringify(opp_wager), opp_max_roll))
-                DRU.HistoryChange("NewRequest", sender, opp_roll, opp_max_roll, time(), nil, sender, opp_wager)
+                DRU.print(string.format("%s wants to deathroll you for %s starting from %d!", sender, goldify(opp_wager), opp_max_roll))
+                DRU.HistoryChange("NewRequest", sender, opp_roll, opp_max_roll, time(), nil, sender, opp_wager, false)
             end
 
         elseif msg_type == "RemoveRequest" then -- removes player from requests
@@ -72,9 +73,9 @@ channel_listener:SetScript("OnEvent", function(self, event, prefix, message, cha
         elseif msg_type == "AcceptRequest" then -- confirms msg we accept their game
             DRU.print(string.format("%s accepts your deathroll!", sender))
             if opp_wager > GS.my_wager then
-                DRU.print(string.format("%s bets %dg against your %dg!", sender, opp_wager, GS.my_wager))
+                DRU.print(string.format("%s bets %s against your %s!", sender, goldify(opp_wager), goldify(GS.my_wager, true)))
             elseif opp_wager < GS.my_wager then
-                DRU.print(string.format("%s is only betting %dg against your %dg.", sender, opp_wager, GS.my_wager))
+                DRU.print(string.format("%s is only betting %s against your %s.", sender, goldify(opp_wager, true), goldify(GS.my_wager, true)))
             end
             DRU.AddWager(opp_wager, "Opp")
 
@@ -143,7 +144,7 @@ function DRU.ParseRoll(msg)
         end
 
     else -- it's a roll for which we do not know the purpose
-        if roller ~= DRU.me then
+        if (roller ~= DRU.me) and (roll ~= 1) then
             if DRU.DEBUG then print("Adding random roll to table...") end
             DRU.random_rolls[roller] = {time(), roller, roll, max_roll} -- save with roller as key so only the most recent roll is known
         end
@@ -166,8 +167,8 @@ function attempt_game_start(my_max_roll, my_wager)
         return
     end
 
-    chat_roll_check(my_max_roll, target_name) -- if roll and target matches, the chat roll is added to requests
-    local is_target_request_pending, _, _, target_roll, _, target_wager = DRU.RequestCheck(target_name) -- see if there's any requests that our roll is the response to
+    chat_roll_check(target_name) -- if roll and target matches, the chat roll is added to requests
+    local is_target_request_pending, _, _, target_roll, _, target_wager, is_chat_roll = DRU.RequestCheck(target_name) -- see if there's any requests that our roll is the response to
 
     local is_valid_roll, err_msg = roll_check(my_max_roll, target_roll, target_name, is_target_request_pending, target_wager)
     if not is_valid_roll then
@@ -192,6 +193,9 @@ function attempt_game_start(my_max_roll, my_wager)
         DRU.HistoryChange("MoveRequest", target_name) -- only need to pass player argument to know who's request to move
         DRU.HistoryChange("RemoveRequest", target_name)
         DRU.AddWager(my_new_wager, "Me")
+        if is_chat_roll then
+            DRU.AddWager(my_new_wager, "Opp")
+        end
         my_max_roll = target_roll
     end
 
@@ -207,7 +211,7 @@ function roll_check(my_roll, exp_roll, target_name, pending_request, target_wage
     if pending_request then
         if (my_roll ~= exp_roll) and (my_roll ~= 0) then
             result = false
-            err_msg = string.format("%s already has a roll request pending, starting from %d for %s.", target_name, exp_roll, stringify(target_wager))
+            err_msg = string.format("%s already has a roll request pending, starting from %d for %s.", target_name, exp_roll, goldify(target_wager))
         end
 
     else
@@ -234,9 +238,9 @@ function wager_check(my_wager, target_wager, target_name, pending_request)
         if (my_wager == 0) and target_wager then
             my_wager = target_wager
         elseif (my_wager < target_wager) and (my_wager ~= 0) then
-            DRU.print(string.format("You are only betting %dg against %s's %dg. Coward.", my_wager, target_name, target_wager))
+            DRU.print(string.format("You are only betting %s against %s's %s. Coward.", goldify(my_wager, true), target_name, goldify(target_wager, true)))
         elseif my_wager > target_wager then
-            DRU.print(string.format("You are betting %dg against %s's %dg!", my_wager, target_name, target_wager))
+            DRU.print(string.format("You are betting %s against %s's %s!", goldify(my_wager), target_name, goldify(target_wager, true)))
         end
     end
 
@@ -251,12 +255,12 @@ function do_roll(type, target_name, roll, wager)
     elseif type == "SendRequest" then
         my_request_pending = true -- now we wait for roll_parser() to see our roll so we can send the game request
         DRU.ButtonUpdate(GS.in_game, GS.my_turn)
-        DRU.print(string.format("Deathrolling %s for %s!", target_name, stringify(wager)))
+        DRU.print(string.format("Deathrolling %s for %s!", target_name, goldify(wager)))
         
     elseif type == "AcceptRequest" then
         send_addon_data(string.format("AcceptRequest:nil:nil:"..wager), "WHISPER", target_name)
         DRU.ButtonUpdate(GS.in_game, GS.my_turn)
-        DRU.print(string.format("Deathrolling %s for %s!", target_name, stringify(wager)))
+        DRU.print(string.format("Deathrolling %s for %s!", target_name, goldify(wager)))
     end
     
     ChatFrame1EditBox:SetText(string.format("/roll %d", roll))
@@ -306,11 +310,11 @@ function target_check() -- checks if player targeted, if they're in our group, a
     return result, target, err_msg
 end
 
-function chat_roll_check(starting_roll, target)
+function chat_roll_check(target)
     for _, roll_table in pairs(DRU.random_rolls) do -- now we check if our roll happens to be a response to a random /roll in chat
-        if (roll_table[3] == starting_roll) and (roll_table[2] == target) then
+        if (roll_table[2] == target) then
             if DRU.debug then print("Detected random roll as starting roll.") end
-            DRU.HistoryChange("NewRequest", roll_table[2], roll_table[3], roll_table[4], time(), nil, roll_table[2], 0)
+            DRU.HistoryChange("NewRequest", roll_table[2], roll_table[3], roll_table[4], time(), nil, roll_table[2], 0, true)
             DRU.random_rolls[roll_table] = nil
             return true
         end
@@ -365,14 +369,20 @@ function scam_alert(scam_type, scammer, min_roll, max_roll, exp_roll)
     end
 end
 
-function stringify(wager)
-    if wager == 0 then wager = "fun"
-    else wager = (wager.."g")
+function goldify(wager, no_fun) -- puts gold icon next to wager. some prints shouldn't have the wager turned into "fun", hence the no_fun flag
+    local new_wager = (tostring(wager)..g)
+
+    if (no_fun == nil) and (wager == 0) then -- what
+        new_wager = "fun"
     end
-    return wager
+    return new_wager
 end
 
 function DRU.print(msg)
+    if not ST.prints then
+        return
+    end
+
     if (msg ~= "") and (msg ~= nil) then
         local pre = "|cffffff00DRU:|r "
         print(pre..msg)

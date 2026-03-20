@@ -6,11 +6,14 @@ local MH -- match history
 local GD -- game details
 local ST -- settings (assigned later to DRUDB.settings)
 local GS = DRU.gamestate
+local g = "|TInterface\\MoneyFrame\\UI-GoldIcon:0|t" -- gold icon
 
 local is_button_initialized = false
 local is_menu_initialized = false
 local button
 local textbox
+local tabs = {}
+local tab_frames = {}
 
 -- constants
 local PAGE_LEN = 8 -- amount of games displayed per page in match history
@@ -27,6 +30,9 @@ local change_page
 local display_game
 local add_row
 local calc_page_ends
+local make_tab
+local set_tab
+local goldify
 
 -- text
 local stats_text = [[
@@ -35,13 +41,14 @@ Win Rate: %s
 Games Won: %d
 Games Lost: %d
 
-Total Gold Earned: %dg
-Worst Roll: %s
-Longest Streak of 2's: %d
+Total Gold Earned: %s
+Biggest Win: %s
+Biggest Loss: %s
+
 Longest Win Streak: %d
 Longest Loss Streak: %d
-Biggest Win: %dg
-Biggest Loss: %dg
+Longest Streak of 2's: %d
+Worst Roll: %s
 ]]
 
 local finance_text = [[
@@ -56,7 +63,7 @@ Your Wager: %s
 ]]
 
 -- anything which needs DRUDB should be listed as a function here.
-function DRU.UI_Init(in_game, my_turn)
+function DRU.InitUI(in_game, my_turn)
     ST = DRUDB.settings
     if ST.dr_button then
         DRU.InitButton()
@@ -64,63 +71,225 @@ function DRU.UI_Init(in_game, my_turn)
     end
     
     if ST.dr_menu then
-        make_page()
+        DRU.InitMenu()
         edit_page(0) -- load the 0th page
         DRU.UpdatePageUI()
+        DRU.UpdateStats()
+    end
+
+    DRU.ToggleTextbox(ST.textbox) -- cba to do not init the textbox like i did with the button and menu
+end
+
+function DRU.InitMenu()
+    -- menu window
+    DRU.menu = CreateFrame("Frame", "MyAddonFrame", UIParent)
+    DRU.menu:SetSize(290, 300)
+    DRU.menu:SetPoint("CENTER")
+    DRU.menu:EnableMouse(true)
+    DRU.menu:SetMovable(true)
+    DRU.menu:RegisterForDrag("LeftButton")
+    DRU.menu:SetScript("OnDragStart", function(self) self:StartMoving() end)
+    DRU.menu:SetScript("OnDragStop", function(self) self:StopMovingOrSizing() end)
+
+    -- background
+    DRU.menu.bg = DRU.menu:CreateTexture(nil, "BACKGROUND")
+    DRU.menu.bg:SetAllPoints(DRU.menu)
+    DRU.menu.bg:SetColorTexture(0, 0, 0, 0.6)
+
+    -- title bar
+    local titleBar = DRU.menu:CreateTexture(nil, "ARTWORK")
+    titleBar:SetPoint("TOPLEFT", DRU.menu, "TOPLEFT")
+    titleBar:SetPoint("TOPRIGHT", DRU.menu, "TOPRIGHT")
+    titleBar:SetHeight(24)
+    titleBar:SetColorTexture(0.1, 0.1, 0.13, 0.95)
+    DRU.menu.title = DRU.menu:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    DRU.menu.title:SetPoint("LEFT", titleBar, "CENTER", -80, 0)
+    DRU.menu.title:SetText("DeathRoll Unlocked")
+
+    -- close button
+    local close = CreateFrame("Button", nil, DRU.menu, "UIPanelCloseButton")
+    close:SetPoint("TOPRIGHT", DRU.menu, "TOPRIGHT", 0, 0)
+    close:SetScript("OnClick", function() DRU.menu:Hide() end)
+
+    -- settings button
+    local settings = CreateFrame("Button", nil, DRU.menu)
+    settings:SetSize(24, 24)
+    settings:SetPoint("TOPRIGHT", DRU.menu, "TOPLEFT", 25, 0)
+    settings:SetNormalTexture("Interface\\Buttons\\UI-OptionsButton")
+    settings:SetHighlightTexture("Interface\\Buttons\\ButtonHilight-Square")
+    settings:SetScript("OnClick", function() Settings.OpenToCategory(DRU.settingsCategory:GetID()) end) -- pass the id of the settings tab we have
+
+    -- Tabs: History, Statistics, Settings
+    local contentArea = CreateFrame("Frame", "DRU_MenuContent", DRU.menu)
+    contentArea:SetPoint("TOPLEFT", DRU.menu, "TOPLEFT", 5, -50)
+    contentArea:SetPoint("BOTTOMRIGHT", DRU.menu, "BOTTOMRIGHT", -12, 12)
+
+    -- History
+    tab_frames[1] = CreateFrame("Frame", nil, contentArea)
+    tab_frames[1]:SetAllPoints(contentArea)
+    tab_frames[1].text = tab_frames[1]:CreateFontString(nil,"OVERLAY","GameFontNormal")
+    tab_frames[1].text:SetPoint("TOPLEFT", 6, -30)
+    tab_frames[1].text:SetJustifyH("LEFT")
+    tab_frames[1].text:SetJustifyV("TOP")
+    tab_frames[1].text:SetText("")
+
+    -- match history page display
+    MH = CreateFrame("Frame", nil, tab_frames[1]) -- parent of the match history list view
+    MH:SetPoint("TOPLEFT", tab_frames[1], "TOPLEFT", 7, 0)
+    MH:SetSize(263, 240)
+    MH.page_num = 0
+
+    -- this is if u want to see the area of the MH
+    -- local bg = match_history_frame:CreateTexture(nil, "BACKGROUND")
+    -- bg:SetAllPoints(match_history_frame)
+    -- bg:SetColorTexture(1, 0, 0, 0.5)
+
+    -- arrows & page number
+    MH.left_arr = CreateFrame("Button", nil, MH, "UIPanelButtonTemplate")
+    MH.left_arr:SetPoint("BOTTOMLEFT", -2, 0)
+    MH.left_arr:SetSize(28, 28)
+    MH.left_arr:SetNormalTexture("Interface\\Buttons\\UI-SpellbookIcon-PrevPage-Up")
+    MH.left_arr:SetScript("OnClick", function() change_page(-1) end)
+
+    MH.right_arr = CreateFrame("Button", nil, MH, "UIPanelButtonTemplate")
+    MH.right_arr:SetPoint("BOTTOMRIGHT")
+    MH.right_arr:SetSize(28, 28)
+    MH.right_arr:SetNormalTexture("Interface\\Buttons\\UI-SpellbookIcon-NextPage-Up")
+    MH.right_arr:SetScript("OnClick", function() change_page(1) end)
+
+    MH:EnableMouseWheel(true)
+    MH:SetScript("OnMouseWheel", function(self, delta) 
+        delta = (delta > 0) and -1 or 1 -- i have to inverse the delta because scrolling down is a negative number
+        change_page(delta)
+    end)
+    MH.page_num_display = MH:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    MH.page_num_display:SetScale(1.5)
+    MH.page_num_display:SetPoint("BOTTOM", 0, 4)
+
+    -- search box
+    MH.search_box = CreateFrame("EditBox", nil, MH, "InputBoxTemplate") -- search bar
+    MH.search_box:SetSize(175, 30)
+    MH.search_box:SetPoint("TOPLEFT", MH, "TOPLEFT", 4, 2)
+    MH.search_box:SetAutoFocus(false)
+    MH.search_box_text = MH.search_box:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall") -- hint text for search bar
+    MH.search_box_text:SetPoint("LEFT", MH.search_box, "LEFT")
+    MH.search_box_text:SetText("Search for opponents")
+    MH.search_box_text:SetTextColor(0.6, 0.6, 0.6)
+    MH.search_box:SetScript("OnEditFocusGained", function(self)
+        MH.search_box_text:Hide()
+    end)
+    MH.search_box:SetScript("OnEditFocusLost", function(self)
+        local text = MH.search_box:GetText()
+        if text == "" then
+            MH.search_box_text:Show()
+        end
+    end)
+    MH.search_box:SetScript("OnKeyUp", function() edit_page(0) end)
+
+    MH.no_games = MH:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    MH.no_games:SetPoint("CENTER", MH, "CENTER", 0, 10)
+    MH.no_games:SetTextColor(0.8, 0.8, 0.8)
+    MH.no_games:SetText("You have no matches to display yet.")
+
+    MH.page = CreateFrame("Frame", nil, MH)
+    MH.page.games = {}
+
+    make_page()
+
+    -- game details display
+    GD = CreateFrame("Frame", nil, tab_frames[1]) -- parent of game details view
+    GD:SetPoint("TOPLEFT", tab_frames[1], "TOPLEFT", 7, -3)
+    GD:SetSize(263, 240)
+    GD:Hide()
+
+    GD.back_arr = CreateFrame("Button", nil, GD, "UIPanelButtonTemplate")
+    GD.back_arr:SetPoint("TOPLEFT", 0, 0)
+    GD.back_arr:SetSize(28, 28)
+    GD.back_arr:SetNormalTexture("Interface\\Buttons\\UI-SpellbookIcon-PrevPage-Up")
+    GD.back_arr:SetScript("OnClick", function()
+        GD:Hide()
+        MH:Show()
+    end)
+
+    GD.info = CreateFrame("Frame", nil, GD)
+    GD.info:SetPoint("TOPRIGHT", GD, "TOPRIGHT", 0, -2)
+    GD.info:SetSize(230, 100)
+    GD.info.text_1 = GD.info:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    GD.info.text_1:SetJustifyH("LEFT")
+    GD.info.text_1:SetJustifyV("TOP") 
+    GD.info.text_1:SetPoint("TOPLEFT", GD.info, "TOPLEFT")
+    GD.info.text_2 = GD.info:CreateFontString(nil, "OVERLAY", "GameFontNormalHuge")
+    GD.info.text_2:SetPoint("TOPLEFT", GD, "TOPLEFT", 0, -55)
+    GD.info.text_2:SetText("Rolls")
+
+    GD.scroll = CreateFrame("ScrollFrame", nil, GD, "UIPanelScrollFrameTemplate")
+    GD.scroll:SetPoint("TOPLEFT", GD, "TOPLEFT", 0, -80)
+    GD.scroll:SetSize(250, 155)
+
+    GD.roll_frame = CreateFrame("Frame", nil, GD.scroll)
+    GD.roll_frame:SetSize(230, 155)
+    GD.scroll:SetScrollChild(GD.roll_frame)
+    GD.rolls = {}
+
+    -- GD.scroll.bg = GD.scroll:CreateTexture(nil, "BACKGROUND")
+    -- GD.scroll.bg:SetAllPoints(GD.scroll)
+    -- GD.scroll.bg:SetColorTexture(1, 0, 0, 0.5)
+
+    -- Statistics
+    tab_frames[2] = CreateFrame("Frame", nil, contentArea)
+    local stats = tab_frames[2]
+    stats:SetAllPoints(contentArea)
+    stats.text = stats:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    stats.text:SetPoint("TOPLEFT", 6, -6)
+    stats.text:SetJustifyH("LEFT")
+    stats.text:SetJustifyV("TOP")
+    stats.text:SetScale(1.2)
+    stats.text_2 = stats:CreateFontString(nil,"OVERLAY","GameFontNormalSmall")
+    stats.text_2:SetPoint("BOTTOMLEFT", 6, 0)
+    stats.text_2:SetText("Statistics are account-wide.")
+    stats.text_2:SetTextColor(0.6, 0.6, 0.6)
+    stats.text_2:SetScale(1.2)
+    stats:Hide()
+
+    -- Finances
+    tab_frames[3] = CreateFrame("Frame", nil, contentArea)
+    local finances = tab_frames[3]
+    finances:SetAllPoints(contentArea)
+    finances.text = tab_frames[3]:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    finances.text:SetPoint("TOPLEFT", 6, -6)
+    finances.text:SetJustifyH("LEFT")
+    finances.text:SetJustifyV("TOP") 
+    finances.text:SetText(finance_text)
+    finances:Hide()
+
+    -- create tab buttons
+    tabs[1] = make_tab("History")
+    tabs[2] = make_tab("Statistics")
+    tabs[3] = make_tab("Finances")
+
+    for i, b in ipairs(tabs) do
+    b:SetScript("OnClick", function() set_tab(i) end)
+    end
+    set_tab(1) -- default to History
+    is_menu_initialized = true
+end
+
+function DRU.ToggleMenu(value)
+    if not is_menu_initialized then
+        DRU.InitMenu()
+    end
+
+    if value then
         DRU.menu:Show()
+        edit_page(0) -- load the 0th page
+        DRU.UpdatePageUI()
         DRU.UpdateStats()
     else
         DRU.menu:Hide()
     end
 end
 
--- menu window
-DRU.menu = CreateFrame("Frame", "MyAddonFrame", UIParent)
-DRU.menu:SetSize(290, 300)
-DRU.menu:SetPoint("CENTER")
-DRU.menu:EnableMouse(true)
-DRU.menu:SetMovable(true)
-DRU.menu:RegisterForDrag("LeftButton")
-DRU.menu:SetScript("OnDragStart", function(self) self:StartMoving() end)
-DRU.menu:SetScript("OnDragStop", function(self) self:StopMovingOrSizing() end)
-
--- background
-DRU.menu.bg = DRU.menu:CreateTexture(nil, "BACKGROUND")
-DRU.menu.bg:SetAllPoints(DRU.menu)
-DRU.menu.bg:SetColorTexture(0, 0, 0, 0.6)
-
--- title bar
-local titleBar = DRU.menu:CreateTexture(nil, "ARTWORK")
-titleBar:SetPoint("TOPLEFT", DRU.menu, "TOPLEFT")
-titleBar:SetPoint("TOPRIGHT", DRU.menu, "TOPRIGHT")
-titleBar:SetHeight(24)
-titleBar:SetColorTexture(0.1, 0.1, 0.13, 0.95)
-DRU.menu.title = DRU.menu:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-DRU.menu.title:SetPoint("LEFT", titleBar, "CENTER", -80, 0)
-DRU.menu.title:SetText("DeathRoll Unlocked")
-
--- close button
-local close = CreateFrame("Button", nil, DRU.menu, "UIPanelCloseButton")
-close:SetPoint("TOPRIGHT", DRU.menu, "TOPRIGHT", 0, 0)
-close:SetScript("OnClick", function() DRU.menu:Hide() end)
-
--- settings button
-local settings = CreateFrame("Button", nil, DRU.menu)
-settings:SetSize(24, 24)
-settings:SetPoint("TOPRIGHT", DRU.menu, "TOPLEFT", 25, 0)
-settings:SetNormalTexture("Interface\\Buttons\\UI-OptionsButton")
-settings:SetHighlightTexture("Interface\\Buttons\\ButtonHilight-Square")
-settings:SetScript("OnClick", function() Settings.OpenToCategory(DRU.settingsCategory:GetID()) end) -- pass the id of the settings tab we have
-
--- Tabs: History, Statistics, Settings
-local contentArea = CreateFrame("Frame", "DRU_MenuContent", DRU.menu)
-contentArea:SetPoint("TOPLEFT", DRU.menu, "TOPLEFT", 5, -50)
-contentArea:SetPoint("BOTTOMRIGHT", DRU.menu, "BOTTOMRIGHT", -12, 12)
-
-local tabs = {}
-local tabFrames = {}
-
-local function make_tab(name) -- this is done by chatGPT i hate UI programming
+function make_tab(name) -- this is done by chatGPT i hate UI programming
     local b = CreateFrame("Button", nil, DRU.menu)
     b:SetSize(84, 22)
     if #tabs == 0 then
@@ -149,74 +318,9 @@ local function make_tab(name) -- this is done by chatGPT i hate UI programming
     return b
 end
 
--- History
-tabFrames[1] = CreateFrame("Frame", nil, contentArea)
-tabFrames[1]:SetAllPoints(contentArea)
-tabFrames[1].text = tabFrames[1]:CreateFontString(nil,"OVERLAY","GameFontNormal")
-tabFrames[1].text:SetPoint("TOPLEFT", 6, -30)
-tabFrames[1].text:SetJustifyH("LEFT")
-tabFrames[1].text:SetJustifyV("TOP")
-tabFrames[1].text:SetText("")
-
--- match history page display
-MH = CreateFrame("Frame", nil, tabFrames[1]) -- parent of the match history list view
-MH:SetPoint("TOPLEFT", tabFrames[1], "TOPLEFT", 7, 0)
-MH:SetSize(263, 240)
-MH.page_num = 0
-
 function DRU.UpdateMatchHistory()
     DRU.UpdatePageUI()
 end
-
--- this is if u want to see the area of the match_history_frame
--- local bg = match_history_frame:CreateTexture(nil, "BACKGROUND")
--- bg:SetAllPoints(match_history_frame)
--- bg:SetColorTexture(1, 0, 0, 0.5)
-
--- arrows & page number
-MH.left_arr = CreateFrame("Button", nil, MH, "UIPanelButtonTemplate")
-MH.left_arr:SetPoint("BOTTOMLEFT", -2, 0)
-MH.left_arr:SetSize(28, 28)
-MH.left_arr:SetNormalTexture("Interface\\Buttons\\UI-SpellbookIcon-PrevPage-Up")
-MH.left_arr:SetScript("OnClick", function() change_page(-1) end)
-
-MH.right_arr = CreateFrame("Button", nil, MH, "UIPanelButtonTemplate")
-MH.right_arr:SetPoint("BOTTOMRIGHT")
-MH.right_arr:SetSize(28, 28)
-MH.right_arr:SetNormalTexture("Interface\\Buttons\\UI-SpellbookIcon-NextPage-Up")
-MH.right_arr:SetScript("OnClick", function() change_page(1) end)
-
-MH:EnableMouseWheel(true)
-MH:SetScript("OnMouseWheel", function(self, delta) 
-    delta = (delta > 0) and -1 or 1 -- i have to inverse the delta because scrolling down is a negative number
-    change_page(delta)
-end)
-MH.page_num_display = MH:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-MH.page_num_display:SetScale(1.5)
-MH.page_num_display:SetPoint("BOTTOM", 0, 4)
-
--- search box
-MH.search_box = CreateFrame("EditBox", nil, MH, "InputBoxTemplate") -- search bar
-MH.search_box:SetSize(175, 30)
-MH.search_box:SetPoint("TOPLEFT", MH, "TOPLEFT", 4, 2)
-MH.search_box:SetAutoFocus(false)
-MH.search_box_text = MH.search_box:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall") -- hint text for search bar
-MH.search_box_text:SetPoint("LEFT", MH.search_box, "LEFT")
-MH.search_box_text:SetText("Search for opponents")
-MH.search_box_text:SetTextColor(0.6, 0.6, 0.6)
-MH.search_box:SetScript("OnEditFocusGained", function(self)
-    MH.search_box_text:Hide()
-end)
-MH.search_box:SetScript("OnEditFocusLost", function(self)
-    local text = MH.search_box:GetText()
-    if text == "" then
-        MH.search_box_text:Show()
-    end
-end)
-MH.search_box:SetScript("OnKeyUp", function() edit_page(0) end)
-
-MH.page = CreateFrame("Frame", nil, MH)
-MH.page.games = {}
 
 function DRU.UpdatePageUI(is_first_page, is_last_page)
     MH.page_num_display:SetText(tostring(MH.page_num + 1))
@@ -242,9 +346,16 @@ function DRU.UpdatePageUI(is_first_page, is_last_page)
 end
 
 function calc_page_ends() -- calculates if we are on the first and/or last page of our match history
+    local total_games = DRU.GetTotalGameAmount()
+    if total_games == 0 then -- edge case because math below doesn't work with 0
+        MH.no_games:Show() -- since we're already checking for 0 games here, throw the no_games text here as well.
+        return true, true
+    else
+        MH.no_games:Hide()
+    end
+
     local is_first_page, is_last_page = false, false
     local curr_page = MH.page_num
-    local total_games = DRU.GetTotalGameAmount()
     local last_page = math.floor((total_games - 1) / PAGE_LEN)
 
     if curr_page == 0 then is_first_page = true end
@@ -275,11 +386,13 @@ function init_hist_entry(y_pos, num) -- creates 1 game entry "preset" at given y
     game.bg = game:CreateTexture(nil, "BACKGROUND")
     game.bg:SetAllPoints(game)
 
-    game.gold = game:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    game.gold:SetPoint("LEFT")
+    game.gold = game:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    game.gold:SetPoint("RIGHT")
+    game.gold:SetScale(1)
 
-    game.opp = game:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    game.opp = game:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     game.opp:SetPoint("CENTER")
+    game.opp:SetScale(1)
 
     game:SetScript("OnClick", function() display_game(DRU.GetGameByID(game.id)) end) -- when u click a game in the list
 end
@@ -331,45 +444,6 @@ function DRU.UpdateCurrPage() -- on page 1, the live udpate works, but on any ot
     edit_page(MH.page_num)
 end
 
--- game details display
-GD = CreateFrame("Frame", nil, tabFrames[1]) -- parent of game details view
-GD:SetPoint("TOPLEFT", tabFrames[1], "TOPLEFT", 7, -3)
-GD:SetSize(263, 240)
-GD:Hide()
-
-GD.back_arr = CreateFrame("Button", nil, GD, "UIPanelButtonTemplate")
-GD.back_arr:SetPoint("TOPLEFT", 0, 0)
-GD.back_arr:SetSize(28, 28)
-GD.back_arr:SetNormalTexture("Interface\\Buttons\\UI-SpellbookIcon-PrevPage-Up")
-GD.back_arr:SetScript("OnClick", function()
-     GD:Hide()
-     MH:Show()
-end)
-
-GD.info = CreateFrame("Frame", nil, GD)
-GD.info:SetPoint("TOPRIGHT", GD, "TOPRIGHT", 0, -2)
-GD.info:SetSize(230, 100)
-GD.info.text_1 = GD.info:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-GD.info.text_1:SetJustifyH("LEFT")
-GD.info.text_1:SetJustifyV("TOP") 
-GD.info.text_1:SetPoint("TOPLEFT", GD.info, "TOPLEFT")
-GD.info.text_2 = GD.info:CreateFontString(nil, "OVERLAY", "GameFontNormalHuge")
-GD.info.text_2:SetPoint("TOPLEFT", GD, "TOPLEFT", 0, -55)
-GD.info.text_2:SetText("Rolls")
-
-GD.scroll = CreateFrame("ScrollFrame", nil, GD, "UIPanelScrollFrameTemplate")
-GD.scroll:SetPoint("TOPLEFT", GD, "TOPLEFT", 0, -80)
-GD.scroll:SetSize(250, 155)
-
-GD.roll_frame = CreateFrame("Frame", nil, GD.scroll)
-GD.roll_frame:SetSize(230, 155)
-GD.scroll:SetScrollChild(GD.roll_frame)
-
--- GD.scroll.bg = GD.scroll:CreateTexture(nil, "BACKGROUND")
--- GD.scroll.bg:SetAllPoints(GD.scroll)
--- GD.scroll.bg:SetColorTexture(1, 0, 0, 0.5)
-
-GD.rolls = {}
 function add_row(roll_line, max_roll_line, pos, i) -- adds a roll to the scroll frame. if the text in the pos already exists, only edit the text and don't waste resources creating a new frame.
     if not GD.rolls[i] then
         GD.rolls[i] = GD.roll_frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
@@ -387,8 +461,8 @@ function display_game(game)
 
     local opp = game.info.opp or "None"
     local result = game.info.result or "None"
-    local my_wager = string.concat(tostring(game.info.my_wager), "g")
-    local opp_wager = string.concat(tostring(game.info.opp_wager), "g")
+    local my_wager = string.concat(tostring(game.info.my_wager), g)
+    local opp_wager = string.concat(tostring(game.info.opp_wager), g)
     local rolls = game.rolls
 
     GD.info.text_1:SetText(string.format(game_info_text, opp, result, my_wager, opp, opp_wager))
@@ -399,8 +473,9 @@ function display_game(game)
         local roller = roll_table[2]
         if roller == DRU.me then roller = "You" end
         local max_roll = roll_table[4]
-        local max_roll_line = string.format("(1-%d)") -- TODO: not yet used
+        local max_roll_line = string.format("(1-%d)")
         local roll = tostring(roll_table[3])
+        if roll == "1" then roll = string.format(roll.. " and lost.") end
         if i == 1 then roll = string.format(roll.." |cffaaaaaa(1-%d)|r", max_roll) end
 
         local roll_line = string.format("%s rolled %s", roller, roll)
@@ -413,64 +488,27 @@ function display_game(game)
         GD.rolls[i]:Hide()
     end
 
-    -- nah
+    -- nah nvm
     -- if GD.scroll:GetVerticalScrollRange() == 0 then
     --     GD.scroll:Hide()
     -- end
 end
 
--- Statistics
-tabFrames[2] = CreateFrame("Frame", nil, contentArea)
-tabFrames[2]:SetAllPoints(contentArea)
-tabFrames[2].text = tabFrames[2]:CreateFontString(nil,"OVERLAY","GameFontNormal")
-tabFrames[2].text:SetPoint("TOPLEFT", 6, -6)
-tabFrames[2].text:SetJustifyH("LEFT")
-tabFrames[2].text:SetJustifyV("TOP")
-tabFrames[2].text:SetScale(1.2)
-
-function DRU.UpdateStats() -- TODO: right now every game updates all of the stats no matter what. can i individually update stats?
-    local total, win_rate, wins, losses, gold, worst_roll, two_streak, win_streak, loss_streak, most_won, most_lost = DRU.GetStats()
-
-    tabFrames[2].text:SetText(string.format(stats_text, total, win_rate, wins, losses, gold, worst_roll, two_streak, win_streak, loss_streak, most_won, most_lost))
-end
-
-tabFrames[2]:Hide()
-
-
-
--- Finances
-tabFrames[3] = CreateFrame("Frame", nil, contentArea)
-tabFrames[3]:SetAllPoints(contentArea)
-tabFrames[3].text = tabFrames[3]:CreateFontString(nil,"OVERLAY","GameFontNormal")
-tabFrames[3].text:SetPoint("TOPLEFT", 6, -6)
-tabFrames[3].text:SetJustifyH("LEFT")
-tabFrames[3].text:SetJustifyV("TOP") 
-tabFrames[3].text:SetText(finance_text)
-tabFrames[3]:Hide()
-
--- create tab buttons
-tabs[1] = make_tab("History")
-tabs[2] = make_tab("Statistics")
-tabs[3] = make_tab("Finances")
-
-local function SetTab(id)
+function set_tab(id)
   for i, b in ipairs(tabs) do
     b.active = (i == id)
     if b.active then b.bg:SetColorTexture(0.22,0.22,0.25,1) else b.bg:SetColorTexture(0.08,0.08,0.09,0.95) end
-    if tabFrames[i] then
-      if i == id then tabFrames[i]:Show() else tabFrames[i]:Hide() end
+    if tab_frames[i] then
+      if i == id then tab_frames[i]:Show() else tab_frames[i]:Hide() end
     end
   end
 end
 
-for i, b in ipairs(tabs) do
-  b:SetScript("OnClick", function() SetTab(i) end)
+function DRU.UpdateStats()
+    local total, win_rate, wins, losses, total_gold, worst_roll, two_streak, win_streak, loss_streak, most_won, most_lost = DRU.GetStats()
+
+    tab_frames[2].text:SetText(string.format(stats_text, total, win_rate, wins, losses, goldify(total_gold), goldify(most_won), goldify(most_lost), win_streak, loss_streak, two_streak, worst_roll))
 end
-
-SetTab(1) -- default to History
-
--- show by default
-DRU.menu:Show()
 
 -- Create draggable parent frame for button
 function DRU.InitButton()
@@ -553,6 +591,14 @@ function DRU.ButtonUpdate(in_game, my_turn)
         end
     end
 
+function DRU.ToggleTextbox(value)
+    if value then
+        textbox:Show()
+    else
+        textbox:Hide()
+    end
+end
+
 function DRU.UpdateTextbox(focus, text)
     if focus == 1 then
         textbox:SetFocus()
@@ -561,6 +607,11 @@ function DRU.UpdateTextbox(focus, text)
     end
 
     textbox:SetText(text)
+end
+
+function goldify(gold)
+    local new_gold = string.concat(gold, g)
+    return new_gold
 end
 
 SLASH_DEATHROLLBUTTON1 = "/drbutton"
@@ -574,5 +625,6 @@ end
 SLASH_DEATHROLLMENU1 = "/drmenu"
 SLASH_DEATHROLLMENU2 = "/drm"
 SlashCmdList["DEATHROLLMENU"] = function()
-  if DRU.menu:IsShown() then DRU.menu:Hide() else DRU.menu:Show() end
+    DRU.ToggleMenu(not ST.dr_menu)
+    ST.dr_menu = not ST.dr_menu
 end
