@@ -23,28 +23,25 @@ end
 function DRU.GetGameState()
     DRUDB.games = DRUDB.games or {}
     local curr_game = DRUDB.games[#DRUDB.games]
-    local last_roll = 0
 
-    if curr_game ~= nil then
-        last_roll = curr_game.rolls[#curr_game.rolls][3]
-    end
-
-    if curr_game == nil or last_roll == 1 or last_roll == nil or last_roll == 0 then -- setting curr_wager to 0 here fucks shit up, let's see if it makes for any bugs down the line (hey, i'm down the line, nothing has happened yet)
+    if not DRU.IsInGame() then
         DRU.gamestate.in_game = false
         DRU.gamestate.curr_game = nil
         DRU.gamestate.my_turn = false
-        DRU.gamestate.curr_opp = nil    
+        DRU.gamestate.curr_opp = nil
         DRU.gamestate.last_roller = nil
-        DRU.gamestate.last_roll = 0
+        DRU.gamestate.last_roll = nil
+        DRU.gamestate.my_wager = nil
+        DRU.gamestate.opp_wager = nil
     else
         DRU.gamestate.in_game = true
         DRU.gamestate.curr_game = curr_game
-        DRU.gamestate.curr_opp = curr_game.info.opp
-        DRU.gamestate.last_roller = curr_game.rolls[#curr_game.rolls][2]
-        DRU.gamestate.last_roll = last_roll
-        DRU.gamestate.my_wager = curr_game.info.my_wager
-        DRU.gamestate.opp_wager = curr_game.info.opp_wager
-        if curr_game.rolls[#curr_game.rolls][2] == DRU.me then
+        DRU.gamestate.curr_opp = curr_game.info["opp"] and curr_game.info.opp or nil
+        DRU.gamestate.last_roller = curr_game.rolls[1] and curr_game.rolls[#curr_game.rolls][2] or nil
+        DRU.gamestate.last_roll = curr_game.rolls[1] and curr_game.rolls[#curr_game.rolls][3] or nil
+        DRU.gamestate.my_wager = curr_game.info["my_wager"] and curr_game.info.my_wager or nil
+        DRU.gamestate.opp_wager = curr_game.info["my_wager"] and curr_game.info.opp_wager or nil
+        if GS.last_roller == DRU.me then
             DRU.gamestate.my_turn = false
         else
             DRU.gamestate.my_turn = true
@@ -56,7 +53,8 @@ function DRU.HistoryChange(type, player, roll, max_roll, time, result, opp, wage
     DRUDB.games = DRUDB.games or {} -- extra checks
     DRUDB.global_stats = DRUDB.global_stats or {}
     DRUDB.requests = DRUDB.requests or {}
-    local _, curr_game = DRU.GameCheck()
+
+    local curr_game = DRUDB.games[#DRUDB.games]
     if type == nil then
         return
         
@@ -71,55 +69,49 @@ function DRU.HistoryChange(type, player, roll, max_roll, time, result, opp, wage
         DRUDB.requests[player] = nil
 
     elseif type == "NewGame" then -- always started by us
-        table.insert(DRUDB.games, {info = {opp = opp, result = nil, my_wager = wager, opp_wager = wager, id = DRU.GenerateGameID()}, rolls = {{time, player, roll, max_roll}}})
+        table.insert(DRUDB.games, {info = {opp = opp, result = nil, my_wager = wager, opp_wager = wager, id = DRU.GenerateGameID()}, rolls = {}})
 
     elseif type == "Roll" then
-        if curr_game == nil then
-            return
-        else
+        if curr_game ~= nil then
             table.insert(curr_game.rolls, {time, player, roll, max_roll})
         end
 
     elseif type == "FastLoss" then -- special case for when our very first roll is immediately 1: otherwise the roll is added twice, because we have to start and end game.
-        if DRUDB.global_stats.total_gold == nil then DRUDB.global_stats.total_gold = 0 end
-        table.insert(DRUDB.games, {info = {opp = opp, result = "Loss", my_wager = wager, opp_wager = wager, id = DRU.GenerateGameID()}, rolls = {{time, player, roll, max_roll}}})
-        if DRUDB.global_stats.total_losses == nil then DRUDB.global_stats.total_losses = 0 end
-            DRUDB.global_stats["total_losses"] = DRUDB.global_stats["total_losses"] + 1
-            DRUDB.global_stats["total_gold"] = DRUDB.global_stats["total_gold"] - DRUDB.games[#DRUDB.games].info.my_wager 
-            DRUDB.games[#DRUDB.games].info.result = "Loss"
-            DRU.EndGame()
+        curr_game.info.result = "Loss"
+        curr_game.rolls = {{time, player, roll, max_roll}}
+        curr_game.info.opp_wager = 0
+        DRUDB.global_stats["total_losses"] = DRUDB.global_stats["total_losses"] + 1
+        DRUDB.global_stats["total_gold"] = DRUDB.global_stats["total_gold"] - DRUDB.games[#DRUDB.games].info.my_wager
+        DRU.EndGame()
 
     elseif type == "FastWin" then -- special case for when someone rolls us and immediately rolls 1
-        if GS.in_game then table.insert(DRUDB.pending_additions, {type, player, roll, max_roll, time, result, opp, wager, is_chat_roll}) return end
-        if DRUDB.global_stats.total_gold == nil then DRUDB.global_stats.total_gold = 0 end
-        table.insert(DRUDB.games, {info = {opp = opp, result = "Win", my_wager = wager, opp_wager = wager, id = DRU.GenerateGameID()}, rolls = {{time, player, roll, max_roll}}})
-        if DRUDB.global_stats.total_losses == nil then DRUDB.global_stats.total_losses = 0 end
-            DRUDB.global_stats["total_wins"] = DRUDB.global_stats["total_wins"] + 1
-            DRUDB.global_stats["total_gold"] = DRUDB.global_stats["total_gold"] + DRUDB.games[#DRUDB.games].info.opp_wager 
-            DRUDB.games[#DRUDB.games].info.result = "Win"
-            DRU.EndGame()
+        if GS.in_game then table.insert(DRUDB.pending_additions, {type, player, roll, max_roll, time, result, opp, wager, is_chat_roll}) return end -- save for after we're done
+        table.insert(DRUDB.games, {info = {opp = opp, result = "Win", my_wager = 0, opp_wager = wager, id = DRU.GenerateGameID()}, rolls = {{time, player, roll, max_roll}}})
+        DRUDB.global_stats["total_wins"] = DRUDB.global_stats["total_wins"] + 1
+        DRUDB.global_stats["total_gold"] = DRUDB.global_stats["total_gold"] + curr_game.info.opp_wager
+        curr_game.info.result = "Win"
+        DRU.EndGame()
 
     elseif type == "EndGame" then
-        if DRUDB.global_stats.total_gold == nil then DRUDB.global_stats.total_gold = 0 end
         if curr_game == nil then -- i hate need check nil
             return
         
         elseif result == "Win" then
-            if DRUDB.global_stats.total_wins == nil then DRUDB.global_stats.total_wins = 0 end -- is this nessecary?
             DRUDB.global_stats["total_wins"] = DRUDB.global_stats["total_wins"] + 1
-            DRUDB.global_stats["total_gold"] = DRUDB.global_stats["total_gold"] + curr_game.info.opp_wager --  attempt to perform arithmetic on field 'opp_wager' (a nil value) AFTER WIN
+            DRUDB.global_stats["total_gold"] = DRUDB.global_stats["total_gold"] + curr_game.info.opp_wager
             curr_game.info.result = "Win"
 
         elseif result == "Loss" then
-            if DRUDB.global_stats.total_losses == nil then DRUDB.global_stats.total_losses = 0 end
             DRUDB.global_stats["total_losses"] = DRUDB.global_stats["total_losses"] + 1
             DRUDB.global_stats["total_gold"] = DRUDB.global_stats["total_gold"] - curr_game.info.my_wager
             curr_game.info.result = "Loss"
             
         elseif result == "Cancel" then -- if it's a cancellation the game is removed
-            table.remove(DRUDB.games, #DRUDB.games) -- if i don't do it like this it doesn't work and idk why lol
+            table.remove(DRUDB.games, #DRUDB.games)
         end
-        table.insert(curr_game.rolls, {time, player, roll, max_roll}) -- if it's ending the game we always add the roll
+
+        if result ~= "Cancel" then table.insert(curr_game.rolls, {time, player, roll, max_roll}) end -- if it's ending the game we always add the roll
+
         DRU.EndGame()
         DRU.AddPendingAdditions()
     end
@@ -127,10 +119,12 @@ end
 
 function DRU.EndGame()
     DRU.GetGameState() -- when a game ends we need to update gamestate for core.lua
-    DRU.UpdateCurrPage() -- match history GUI update
+    
     DRU.TwoStreakCheck() -- checks for stats
     DRU.GameStreakCheck()
     DRU.BigWagerCheck()
+
+    DRU.UpdateCurrPage() -- match history GUI update
     DRU.UpdateStats() -- this is for gui. TODO: make clear in the function that it's gui related
     DRU.UpdatePageUI()
 end
@@ -160,26 +154,15 @@ end
 function DRU.AddWager(wager, player)
     if DRUDB.games[#DRUDB.games] == nil then
         return
-    elseif player == "Opp" then
-        DRUDB.games[#DRUDB.games].info["opp_wager"] = wager
-    elseif player == "Me" then
-        DRUDB.games[#DRUDB.games].info["my_wager"] = wager
-    end
-end
-
-function DRU.GameCheck() -- returns in_game, curr_game table
-    local _, last_roll = DRU.GetRoll()
-    if last_roll == 1 or last_roll == nil then
-        return false, nil
     else
-        return true, DRUDB.games[#DRUDB.games]
+        DRUDB.games[#DRUDB.games].info[player] = wager
     end
 end
 
 function DRU.TurnCheck() -- returns my_turn
-    local in_game = DRU.GameCheck()
     local last_roller = DRU.GetRoll()
-    if not in_game then
+
+    if not DRU.IsInGame() then
         return nil
     else
         if last_roller ~= DRU.me then
@@ -201,14 +184,14 @@ end
 function DRU.GetRoll(player) -- returns roller, roll, max_roll
     DRUDB.games = DRUDB.games or {}
     local curr_game = DRUDB.games[#DRUDB.games]
-    if curr_game == nil then
+    if not DRU.IsInGame() then
         return nil, nil, nil
     end
 
     if player == nil then -- if no player specified just get the most recent roll
         return curr_game.rolls[#curr_game.rolls][2], curr_game.rolls[#curr_game.rolls][3], curr_game.rolls[#curr_game.rolls][4]
 
-    else -- otherwise check which of the last 2 rolls is the correct player CURRENTLY DOES NOT WORK LOL
+    else -- otherwise check which of the last 2 rolls is the correct player CURRENTLY DOES NOT WORK AND NOT USED
         local last_2_games = {curr_game.rolls[#curr_game.rolls], curr_game.rolls[#curr_game.rolls -1]}
         for _, data in ipairs{last_2_games}  do
             if data then
@@ -265,7 +248,7 @@ end
 
 function DRU.GetCurrOpp() -- returns curr_opp
     local curr_game = DRUDB.games[#DRUDB.games]
-    if curr_game == nil then 
+    if not DRU.IsInGame() then
         return nil
 
     else
@@ -392,6 +375,22 @@ function DRU.WipeDB()
     DRU.UpdateMenu()
 end
 
+function DRU.IsInGame() -- no games, no rolls or last_roll == 1 means we are not in game.
+    if DRUDB.games[#DRUDB.games] == nil then
+        -- if DRU.DEBUG then print("curr_game is nil") end
+        return false
+    elseif #DRUDB.games[#DRUDB.games].rolls == 0 then -- this is only true if we have just started a new game
+        -- if DRU.DEBUG then print("no rolls but there is a game started") end
+        return true
+    elseif DRUDB.games[#DRUDB.games].rolls[#DRUDB.games[#DRUDB.games].rolls][3] == 1 then -- wow this syntax is atrocious. "if last roll of last game == 1"
+        -- if DRU.DEBUG then print("last_roll was 1") end
+        return false
+    else
+        -- if DRU.DEBUG then print("its all good we are in game") end
+        return true
+    end
+end
+
 -- COMMANDS
 SLASH_DEATHROLLTRY1 = "/drtry"
 SlashCmdList["DEATHROLLTRY"] = function()
@@ -400,7 +399,7 @@ SlashCmdList["DEATHROLLTRY"] = function()
         return
     end
 
-    DRU.AddPendingAdditions()
+    print(DRUDB.games[#DRUDB.games].rolls[#DRUDB.games[#DRUDB.games].rolls])
 end
 
 SLASH_DEATHROLLGAMES1 = "/drgame"
@@ -409,8 +408,7 @@ SlashCmdList["DEATHROLLGAMES"] = function()
     if next(DRUDB.requests) ~= nil then
         for player, _ in pairs(DRUDB.requests) do
             local wager = DRUDB.requests[player].info["opp_wager"]
-            local wager_str = tostring(string.format(wager.."g"))
-            if wager == 0 then wager_str = "fun" end
+            local wager_str = DRU.G(wager)
             DRU.print(string.format("%s started from %d and rolled %d for %s.", player, DRUDB.requests[player].rolls[1][4], DRUDB.requests[player].rolls[1][3], wager_str))
         end
     else

@@ -33,7 +33,7 @@ local add_row
 local calc_page_ends
 local make_tab
 local set_tab
-local goldify
+local goldify -- different than the DRU.G
 
 -- text
 local stats_text = [[
@@ -63,6 +63,7 @@ Your Wager: %s
 %s's Wager: %s
 ]]
 
+-- confirmation popup for deleting match history
 StaticPopupDialogs["DRU_CONFIRM_WIPE"] = {
     text = "Are you sure you want to delete ALL of your games, rolls and statistics?",
     button1 = "Yes",
