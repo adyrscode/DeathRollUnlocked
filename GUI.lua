@@ -1,5 +1,6 @@
 DeathRollUnlocked = DeathRollUnlocked or {}
 local DRU = DeathRollUnlocked
+---@diagnostic disable: undefined-global
 
 -- GUI things & shorthands
 local MH -- match history
@@ -61,6 +62,16 @@ Result: %s
 Your Wager: %s
 %s's Wager: %s
 ]]
+
+StaticPopupDialogs["DRU_CONFIRM_WIPE"] = {
+    text = "Are you sure you want to delete ALL of your games, rolls and statistics?",
+    button1 = "Yes",
+    button2 = "No",
+    OnAccept = function() DRU.WipeDB() end,
+    timeout = 0, 
+    whileDead = true, 
+    hideOnEscape = false
+}
 
 -- anything which needs DRUDB should be listed as a function here.
 function DRU.InitUI(in_game, my_turn)
@@ -318,8 +329,10 @@ function make_tab(name) -- this is done by chatGPT i hate UI programming
     return b
 end
 
-function DRU.UpdateMatchHistory()
+function DRU.UpdateMenu()
+    edit_page(0)
     DRU.UpdatePageUI()
+    DRU.UpdateStats()
 end
 
 function DRU.UpdatePageUI(is_first_page, is_last_page)
@@ -607,6 +620,10 @@ function DRU.UpdateTextbox(focus, text)
     end
 
     textbox:SetText(text)
+end
+
+function DRU.ConfirmWipe(type)
+    StaticPopup_Show("DRU_CONFIRM_WIPE")
 end
 
 function goldify(gold)

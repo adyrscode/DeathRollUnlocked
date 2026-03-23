@@ -4,7 +4,7 @@
 DeathRollUnlocked = DeathRollUnlocked or {}
 local DRU = DeathRollUnlocked
 local ST -- settings
-local GS = DRU.gamestate
+local GS
 local g = "|TInterface\\MoneyFrame\\UI-GoldIcon:0|t"
 
 function DRU.InitDB()
@@ -13,9 +13,11 @@ function DRU.InitDB()
     end
     DRUDB.global_stats = DRUDB.global_stats or
     {total_wins = 0, total_losses = 0, total_gold = 0, worst_roll = 0, two_streak = 0, win_streak = 0, loss_streak = 0, most_won = 0, most_lost = 0}
-    DRUDB.games = DRUDB.games or {}
-    DRUDB.requests = DRUDB.requests or {}
+    DRUDB.games = DRUDB.games or {} -- match history
+    DRUDB.requests = DRUDB.requests or {} -- pending requests
+    DRUDB.pending_additions = DRUDB.pending_additions or {} -- games to be added after we are done with our current game (someone else tried to roll us mid-game and they lost immediately)
     ST = DRUDB.settings
+    GS = DRU.gamestate
 end
 
 function DRU.GetGameState()
@@ -88,7 +90,7 @@ function DRU.HistoryChange(type, player, roll, max_roll, time, result, opp, wage
             DRU.EndGame()
 
     elseif type == "FastWin" then -- special case for when someone rolls us and immediately rolls 1
-        -- if GS.in_game then return end -- TODO: what if our opponent is already in the middle of a deathroll?
+        if GS.in_game then table.insert(DRUDB.pending_additions, {type, player, roll, max_roll, time, result, opp, wager, is_chat_roll}) return end
         if DRUDB.global_stats.total_gold == nil then DRUDB.global_stats.total_gold = 0 end
         table.insert(DRUDB.games, {info = {opp = opp, result = "Win", my_wager = wager, opp_wager = wager, id = DRU.GenerateGameID()}, rolls = {{time, player, roll, max_roll}}})
         if DRUDB.global_stats.total_losses == nil then DRUDB.global_stats.total_losses = 0 end
@@ -119,6 +121,7 @@ function DRU.HistoryChange(type, player, roll, max_roll, time, result, opp, wage
         end
         table.insert(curr_game.rolls, {time, player, roll, max_roll}) -- if it's ending the game we always add the roll
         DRU.EndGame()
+        DRU.AddPendingAdditions()
     end
 end
 
@@ -129,7 +132,7 @@ function DRU.EndGame()
     DRU.GameStreakCheck()
     DRU.BigWagerCheck()
     DRU.UpdateStats() -- this is for gui. TODO: make clear in the function that it's gui related
-    DRU.UpdateMatchHistory()
+    DRU.UpdatePageUI()
 end
 
 function DRU.RequestCheck(target_name) -- checks if target selected is in request list, and gives back all bool, time, player, roll, maxroll, wager, is_chat_roll
@@ -144,6 +147,13 @@ function DRU.RequestCheck(target_name) -- checks if target selected is in reques
             end
         end
         return false
+    end
+end
+
+function DRU.AddPendingAdditions()
+    for i, game in pairs(DRUDB.pending_additions) do
+        DRU.HistoryChange(unpack(game))
+        DRUDB.pending_additions[i] = nil
     end
 end
 
@@ -234,8 +244,10 @@ function DRU.GetMatchHistoryPage(page_num, page_len, opp_search)
             skip = true
         end
 
-        if (opp_search == "") or (string.find(string.lower(opp), string.lower(opp_search))) then
-            if not skip then table.insert(my_games, {id, opp, result, gold_str}) end
+        if not skip then
+            if (opp_search == "") or (string.find(string.lower(opp), string.lower(opp_search))) then
+                table.insert(my_games, {id, opp, result, gold_str})
+            end
         end
     end
 
@@ -302,7 +314,7 @@ function DRU.GetStats() -- returns all stats for the GUI
         worst_roll = "None"
     else
         local temp_roll = worst_roll
-        worst_roll = string.format("You rolled 1 out of %d.", temp_roll, temp_roll)
+        worst_roll = string.format("1 out of %d.", temp_roll, temp_roll)
     end
 
     return total, win_rate_str, wins, losses, gold, worst_roll, two_streak, win_streak, loss_streak, most_won, most_lost
@@ -356,6 +368,7 @@ end
 
 function DRU.BigWagerCheck()
     local game = DRUDB.games[#DRUDB.games]
+    if not game then return end
 
     local result_key = (game.info.result == "Win") and "most_won" or "most_lost"
     local wager_key = (game.info.result == "Win") and "my_wager" or "opp_wager"
@@ -369,7 +382,27 @@ function DRU.GenerateGameID()
     return DRUDB.global_stats["total_wins"] + DRUDB.global_stats["total_losses"] + 1
 end
 
+function DRU.WipeDB()
+    table.wipe(DRUDB.games)
+    table.wipe(DRUDB.requests)
+    table.wipe(DRUDB.pending_additions)
+    for i, stat in pairs(DRUDB.global_stats) do
+        DRUDB.global_stats[i] = 0
+    end
+    DRU.UpdateMenu()
+end
+
 -- COMMANDS
+SLASH_DEATHROLLTRY1 = "/drtry"
+SlashCmdList["DEATHROLLTRY"] = function()
+    if not DRU.DEBUG then
+        DRU.print("That's a dev command buddy :)")
+        return
+    end
+
+    DRU.AddPendingAdditions()
+end
+
 SLASH_DEATHROLLGAMES1 = "/drgame"
 SLASH_DEATHROLLGAMES2 = "/drgames"
 SlashCmdList["DEATHROLLGAMES"] = function()

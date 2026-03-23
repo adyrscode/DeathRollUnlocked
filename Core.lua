@@ -60,7 +60,7 @@ channel_listener:SetScript("OnEvent", function(self, event, prefix, message, cha
         if msg_type == "GameRequest" then
             if opp_roll == 1 then
                 DRU.print(string.format("%s wanted to deathroll you for %s starting from %d, but they immediately lost!", sender, goldify(opp_wager), opp_max_roll))
-                DRU.HistoryChange("FastWin", sender, opp_roll, opp_max_roll, time(), nil, sender, opp_wager)
+                DRU.HistoryChange("FastWin", sender, opp_roll, opp_max_roll, time(), "Win", sender, opp_wager)
             else
                 DRU.print(string.format("%s wants to deathroll you for %s starting from %d!", sender, goldify(opp_wager), opp_max_roll))
                 DRU.HistoryChange("NewRequest", sender, opp_roll, opp_max_roll, time(), nil, sender, opp_wager, false)
@@ -170,7 +170,7 @@ function attempt_game_start(my_max_roll, my_wager)
     chat_roll_check(target_name) -- if roll and target matches, the chat roll is added to requests
     local is_target_request_pending, _, _, target_roll, _, target_wager, is_chat_roll = DRU.RequestCheck(target_name) -- see if there's any requests that our roll is the response to
 
-    local is_valid_roll, err_msg = roll_check(my_max_roll, target_roll, target_name, is_target_request_pending, target_wager)
+    local is_valid_roll, err_msg = roll_check(my_max_roll, target_roll, target_name, is_target_request_pending, target_wager, is_chat_roll)
     if not is_valid_roll then
         if DRU.DEBUG then print("Invalid roll.") end
         DRU.UpdateTextbox(0, "")
@@ -188,7 +188,7 @@ function attempt_game_start(my_max_roll, my_wager)
 
     if DRU.DEBUG then print("All checks passed. Starting game...") end
     local game_type = "SendRequest"
-    if is_target_request_pending then
+    if is_target_request_pending and ((my_max_roll == 0) or (my_max_roll == target_roll)) then
         game_type = "AcceptRequest"
         DRU.HistoryChange("MoveRequest", target_name) -- only need to pass player argument to know who's request to move
         DRU.HistoryChange("RemoveRequest", target_name)
@@ -204,12 +204,12 @@ function attempt_game_start(my_max_roll, my_wager)
     do_roll(game_type, target_name, my_max_roll, my_new_wager)
 end
 
-function roll_check(my_roll, exp_roll, target_name, pending_request, target_wager) -- returns x, y, z
+function roll_check(my_roll, exp_roll, target_name, pending_request, target_wager, is_chat_roll)
     local result = true
     local err_msg = ""
 
     if pending_request then
-        if (my_roll ~= exp_roll) and (my_roll ~= 0) then
+        if (my_roll ~= exp_roll) and (my_roll ~= 0) and (not is_chat_roll) then
             result = false
             err_msg = string.format("%s already has a roll request pending, starting from %d for %s.", target_name, exp_roll, goldify(target_wager))
         end
@@ -457,6 +457,7 @@ end
 
 SLASH_DEATHROLLDEBUG1 = "/drd"
 SlashCmdList["DEATHROLLDEBUG"] = function()
+    if not DRU.DEBUG then return end
     print("===== Death Roll Debug =====")
     print("Last Roller: " .. tostring(GS.last_roller))
     print("Last Roll: " .. tostring(GS.last_roll))
@@ -480,8 +481,6 @@ SlashCmdList["DEATHROLLHELP"] = function()
 Type "/drmenu" to see your match history, statistics and settings.
 Type "/drgames" to see who wants to roll you.
 Type "/drbutton" to enable/disable the deathrolling button.
-Type "/drcancel" during a roll to ask your opponent to agree to cancel the game.
-Type "/drcontinue" to decline your opponent's cancellation request.
-Type "/drclear" to clear your game history.
+Type "/drcancel" to cancel a game or a pending request.
 ]])
 end
