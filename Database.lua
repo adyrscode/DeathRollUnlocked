@@ -20,8 +20,10 @@ function DRU.InitDB()
     GS = DRU.gamestate
 end
 
+-- the gamestate (GS) is always decided by the information available in DRUDB 
+-- the gamestate is updated/checked on load, before AND after every roll, and always after a game ends in any way.
+-- this way the core logic can easily rely on the gamestate table and not have to worry about DRUDB.
 function DRU.GetGameState()
-    DRUDB.games = DRUDB.games or {}
     local curr_game = DRUDB.games[#DRUDB.games]
 
     if not DRU.IsInGame() then
@@ -39,8 +41,8 @@ function DRU.GetGameState()
         DRU.gamestate.curr_opp = curr_game.info["opp"] and curr_game.info.opp or nil
         DRU.gamestate.last_roller = curr_game.rolls[1] and curr_game.rolls[#curr_game.rolls][2] or nil
         DRU.gamestate.last_roll = curr_game.rolls[1] and curr_game.rolls[#curr_game.rolls][3] or nil
-        DRU.gamestate.my_wager = curr_game.info["my_wager"] and curr_game.info.my_wager or nil
-        DRU.gamestate.opp_wager = curr_game.info["my_wager"] and curr_game.info.opp_wager or nil
+        DRU.gamestate.my_wager = curr_game.info["my_wager"] and curr_game.info.my_wager or 0
+        DRU.gamestate.opp_wager = curr_game.info["my_wager"] and curr_game.info.opp_wager or 0
         if GS.last_roller == DRU.me then
             DRU.gamestate.my_turn = false
         else
@@ -50,10 +52,6 @@ function DRU.GetGameState()
 end
 
 function DRU.HistoryChange(type, player, roll, max_roll, time, result, opp, wager, is_chat_roll) -- adds rolls to ongoing games or adds requests (can also cancel roll)
-    DRUDB.games = DRUDB.games or {} -- extra checks
-    DRUDB.global_stats = DRUDB.global_stats or {}
-    DRUDB.requests = DRUDB.requests or {}
-
     local curr_game = DRUDB.games[#DRUDB.games]
     if type == nil then
         return
@@ -76,6 +74,7 @@ function DRU.HistoryChange(type, player, roll, max_roll, time, result, opp, wage
             table.insert(curr_game.rolls, {time, player, roll, max_roll})
         end
 
+    -- the FastLoss can use curr_game because a new game has already been created by ParseRoll. FastWin cannot do the same because it has to create a new game on the spot.
     elseif type == "FastLoss" then -- special case for when our very first roll is immediately 1: otherwise the roll is added twice, because we have to start and end game.
         curr_game.info.result = "Loss"
         curr_game.rolls = {{time, player, roll, max_roll}}
@@ -88,8 +87,8 @@ function DRU.HistoryChange(type, player, roll, max_roll, time, result, opp, wage
         if GS.in_game then table.insert(DRUDB.pending_additions, {type, player, roll, max_roll, time, result, opp, wager, is_chat_roll}) return end -- save for after we're done
         table.insert(DRUDB.games, {info = {opp = opp, result = "Win", my_wager = 0, opp_wager = wager, id = DRU.GenerateGameID()}, rolls = {{time, player, roll, max_roll}}})
         DRUDB.global_stats["total_wins"] = DRUDB.global_stats["total_wins"] + 1
-        DRUDB.global_stats["total_gold"] = DRUDB.global_stats["total_gold"] + curr_game.info.opp_wager
-        curr_game.info.result = "Win"
+        DRUDB.global_stats["total_gold"] = DRUDB.global_stats["total_gold"] + DRUDB.games[#DRUDB.games].info.opp_wager
+        DRUDB.games[#DRUDB.games].info.result = "Win"
         DRU.EndGame()
 
     elseif type == "EndGame" then
@@ -174,7 +173,6 @@ function DRU.TurnCheck() -- returns my_turn
 end
 
 function DRU.GetRollIndex()
-    DRUDB.games = DRUDB.games or {}
     local curr_game = DRUDB.games[#DRUDB.games]
     if curr_game and curr_game.rolls then
         return #curr_game.rolls
@@ -182,7 +180,6 @@ function DRU.GetRollIndex()
 end
 
 function DRU.GetRoll(player) -- returns roller, roll, max_roll
-    DRUDB.games = DRUDB.games or {}
     local curr_game = DRUDB.games[#DRUDB.games]
     if not DRU.IsInGame() then
         return nil, nil, nil
@@ -216,6 +213,7 @@ function DRU.GetMatchHistoryPage(page_num, page_len, opp_search)
         local id = DRUDB.games[i].info.id
         local opp = DRUDB.games[i].info.opp
         local result = DRUDB.games[i].info.result
+        -- local is_chat_roll = DRUDB.games[i]["is_chat_roll"] or false -- TODO: add "assumed wager" notifier if is_chat_roll
         local gold_str = ""
         local skip = false
         
@@ -274,7 +272,6 @@ function DRU.GetCurrOppWager()
 end
 
 function DRU.GetStats() -- returns all stats for the GUI
-    DRUDB.global_stats = DRUDB.global_stats or {}
     local wins = DRUDB.global_stats["total_wins"]
     local losses = DRUDB.global_stats["total_losses"]
     local total = wins + losses
@@ -399,7 +396,8 @@ SlashCmdList["DEATHROLLTRY"] = function()
         return
     end
 
-    print(DRUDB.games[#DRUDB.games].rolls[#DRUDB.games[#DRUDB.games].rolls])
+    local string = "5"
+    print(tonumber(string) or 6)
 end
 
 SLASH_DEATHROLLGAMES1 = "/drgame"
@@ -411,6 +409,7 @@ SlashCmdList["DEATHROLLGAMES"] = function()
             local wager_str = DRU.G(wager)
             DRU.print(string.format("%s started from %d and rolled %d for %s.", player, DRUDB.requests[player].rolls[1][4], DRUDB.requests[player].rolls[1][3], wager_str))
         end
+        DRU.print("Type /drclear to clear your deathroll request list.")
     else
         DRU.print("You have no deathroll requests right now.")
     end
@@ -418,16 +417,12 @@ end
 
 SLASH_DEATHROLLCLEAR1 = "/drclear"
 SlashCmdList["DEATHROLLCLEAR"] = function()
-    if not DRU.DEBUG then
-        DRU.print("That's a dev command buddy :)")
-        return
+    for _, request in pairs(DRUDB.requests) do
+        local name = request.info.opp
+        DRU.SendAddonData("CancelGame", "WHISPER", name)
     end
-
-    table.wipe(DRUDB.games)
-    DRUDB.global_stats["total_wins"] = 0
-    DRUDB.global_stats["total_losses"] = 0
-    DRUDB.global_stats["total_gold"] = 0
-    print("|cffffff00DRU:|r Game history cleared.")
+    table.wipe(DRUDB.requests)
+    DRU.print("Deathroll request list cleared.")
 end
 
 SLASH_DEATHROLLWIPE1 = "/drwipe"

@@ -16,7 +16,7 @@ function DRU.InitSettings()
     {
 {"dr_button", "DeathRoll Button", true, "Toggles the deathrolling button (can also be toggled with /drbutton or /drb).", DRU.ToggleButton},
 {"dr_menu", "DeathRoll Menu", true, "Toggles the deathrolling menu (can also be toggled with /drmenu or /drm).", DRU.ToggleMenu},
-{"textbox", "Roll/Wager Box", true, "Toggles the textbox under the deathrolling button where you can enter your roll and wager.", DRU.ToggleTextbox},
+{"textbox", "Roll/Wager Box", true, "Toggles the textbox below the deathrolling button where you can enter your roll and wager.", DRU.ToggleTextbox},
 {"prints", "Chat Messages", true, "Toggles the addons' information and alerts in chat. Recommended to keep enabled, as this includes error messages.", nil}
     }
 

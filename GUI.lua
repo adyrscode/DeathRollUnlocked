@@ -95,6 +95,7 @@ end
 function DRU.InitMenu()
     -- menu window
     DRU.menu = CreateFrame("Frame", "MyAddonFrame", UIParent)
+    DRU.menu:SetFrameStrata("MEDIUM")
     DRU.menu:SetSize(290, 300)
     DRU.menu:SetPoint("CENTER")
     DRU.menu:EnableMouse(true)
@@ -527,6 +528,7 @@ end
 -- Create draggable parent frame for button
 function DRU.InitButton()
     DRU.button_frame = CreateFrame("Frame", "DeathrollFrame", UIParent, "BackdropTemplate")
+    DRU.button_frame:SetFrameStrata("HIGH")
     DRU.button_frame:SetSize(100, 40)
     DRU.button_frame:SetPoint("CENTER", -100, -50)
     DRU.button_frame:SetBackdrop({
