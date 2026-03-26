@@ -53,6 +53,7 @@ end
 
 function DRU.HistoryChange(type, player, roll, max_roll, time, result, opp, wager, is_chat_roll) -- adds rolls to ongoing games or adds requests (can also cancel roll)
     local curr_game = DRUDB.games[#DRUDB.games]
+    local is_cancelled = false
     if type == nil then
         return
         
@@ -79,8 +80,9 @@ function DRU.HistoryChange(type, player, roll, max_roll, time, result, opp, wage
         curr_game.info.result = "Loss"
         curr_game.rolls = {{time, player, roll, max_roll}}
         curr_game.info.opp_wager = 0
+        -- my_wager is already added in attempt_game_start!
         DRUDB.global_stats["total_losses"] = DRUDB.global_stats["total_losses"] + 1
-        DRUDB.global_stats["total_gold"] = DRUDB.global_stats["total_gold"] - DRUDB.games[#DRUDB.games].info.my_wager
+        DRUDB.global_stats["total_gold"] = DRUDB.global_stats["total_gold"] - curr_game.info.my_wager
         DRU.EndGame()
 
     elseif type == "FastWin" then -- special case for when someone rolls us and immediately rolls 1
@@ -107,21 +109,24 @@ function DRU.HistoryChange(type, player, roll, max_roll, time, result, opp, wage
             
         elseif result == "Cancel" then -- if it's a cancellation the game is removed
             table.remove(DRUDB.games, #DRUDB.games)
+            is_cancelled = true
         end
 
         if result ~= "Cancel" then table.insert(curr_game.rolls, {time, player, roll, max_roll}) end -- if it's ending the game we always add the roll
 
-        DRU.EndGame()
+        DRU.EndGame(is_cancelled)
         DRU.AddPendingAdditions()
     end
 end
 
-function DRU.EndGame()
+function DRU.EndGame(is_cancelled)
     DRU.GetGameState() -- when a game ends we need to update gamestate for core.lua
     
-    DRU.TwoStreakCheck() -- checks for stats
-    DRU.GameStreakCheck()
-    DRU.BigWagerCheck()
+    if not is_cancelled then -- checks for stats
+        DRU.TwoStreakCheck()
+        DRU.GameStreakCheck()
+        DRU.BigWagerCheck()
+    end
 
     DRU.UpdateCurrPage() -- match history GUI update
     DRU.UpdateStats() -- this is for gui. TODO: make clear in the function that it's gui related
@@ -235,9 +240,13 @@ function DRU.GetMatchHistoryPage(page_num, page_len, opp_search)
     return my_games
 end
 
-function DRU.GetGameByID(id)
-    local game = DRUDB.games[id]
-    return game
+function DRU.GetGameByID(id) -- a safe function that returns a game based on id.
+    for i, game in ipairs(DRUDB.games) do
+        if game.info.id == id then
+            return game
+        end
+    end
+    if DRU.DEBUG then print(string.format("Game %d not found!", id)) end
 end
 
 function DRU.GetTotalGameAmount()
@@ -350,11 +359,11 @@ function DRU.BigWagerCheck()
     local game = DRUDB.games[#DRUDB.games]
     if not game then return end
 
-    local result_key = (game.info.result == "Win") and "most_won" or "most_lost"
-    local wager_key = (game.info.result == "Win") and "my_wager" or "opp_wager"
-    
-    if game.info[wager_key] > DRUDB.global_stats[result_key] then
-        DRUDB.global_stats[result_key] = game.info[wager_key]
+    local stats_key = (game.info.result == "Win") and "most_won" or "most_lost"
+    local wager_key = (game.info.result == "Win") and "opp_wager" or "my_wager"
+
+    if abs(game.info[wager_key]) > abs(DRUDB.global_stats[stats_key]) then
+        DRUDB.global_stats[stats_key] = game.info[wager_key]
     end
 end
 
@@ -417,6 +426,11 @@ end
 
 SLASH_DEATHROLLCLEAR1 = "/drclear"
 SlashCmdList["DEATHROLLCLEAR"] = function()
+    if #DRUDB.requests == 0 then
+        DRU.print("You have no deathroll requests right now.")
+        return
+    end
+
     for _, request in pairs(DRUDB.requests) do
         local name = request.info.opp
         DRU.SendAddonData("CancelGame", "WHISPER", name)

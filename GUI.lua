@@ -80,6 +80,7 @@ function DRU.InitUI(in_game, my_turn)
     if ST.dr_button then
         DRU.InitButton()
         DRU.ButtonUpdate(in_game, my_turn)
+        DRU.ToggleTextbox(ST.textbox)
     end
     
     if ST.dr_menu then
@@ -89,15 +90,15 @@ function DRU.InitUI(in_game, my_turn)
         DRU.UpdateStats()
     end
 
-    DRU.ToggleTextbox(ST.textbox) -- cba to do not init the textbox like i did with the button and menu
+    -- DRU.InitRollBox()
 end
 
 function DRU.InitMenu()
     -- menu window
-    DRU.menu = CreateFrame("Frame", "MyAddonFrame", UIParent)
-    DRU.menu:SetFrameStrata("MEDIUM")
+    DRU.menu = CreateFrame("Frame", "DeathRollFrame", UIParent)
+    DRU.menu:SetFrameStrata("LOW")
     DRU.menu:SetSize(290, 300)
-    DRU.menu:SetPoint("CENTER")
+    DRU.menu:SetPoint("CENTER", 200, 0)
     DRU.menu:EnableMouse(true)
     DRU.menu:SetMovable(true)
     DRU.menu:RegisterForDrag("LeftButton")
@@ -180,24 +181,12 @@ function DRU.InitMenu()
     MH.page_num_display:SetPoint("BOTTOM", 0, 4)
 
     -- search box
-    MH.search_box = CreateFrame("EditBox", nil, MH, "InputBoxTemplate") -- search bar
-    MH.search_box:SetSize(175, 30)
+    MH.search_box = CreateFrame("EditBox", nil, MH, "SearchBoxTemplate") -- search bar
+    MH.search_box:SetSize(260, 30)
     MH.search_box:SetPoint("TOPLEFT", MH, "TOPLEFT", 4, 2)
     MH.search_box:SetAutoFocus(false)
-    MH.search_box_text = MH.search_box:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall") -- hint text for search bar
-    MH.search_box_text:SetPoint("LEFT", MH.search_box, "LEFT")
-    MH.search_box_text:SetText("Search for opponents")
-    MH.search_box_text:SetTextColor(0.6, 0.6, 0.6)
-    MH.search_box:SetScript("OnEditFocusGained", function(self)
-        MH.search_box_text:Hide()
-    end)
-    MH.search_box:SetScript("OnEditFocusLost", function(self)
-        local text = MH.search_box:GetText()
-        if text == "" then
-            MH.search_box_text:Show()
-        end
-    end)
-    MH.search_box:SetScript("OnKeyUp", function() edit_page(0) end)
+    MH.search_box.Instructions:SetText("Search for opponents")
+    MH.search_box:HookScript("OnTextChanged", function() edit_page(0) end)
 
     MH.no_games = MH:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     MH.no_games:SetPoint("CENTER", MH, "CENTER", 0, 10)
@@ -269,10 +258,11 @@ function DRU.InitMenu()
     local finances = tab_frames[3]
     finances:SetAllPoints(contentArea)
     finances.text = tab_frames[3]:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    finances.text:SetPoint("TOPLEFT", 6, -6)
+    finances.text:SetPoint("CENTER", 0, 20)
     finances.text:SetJustifyH("LEFT")
     finances.text:SetJustifyV("TOP") 
     finances.text:SetText(finance_text)
+    finances.text:SetTextColor(0.6, 0.6, 0.6)
     finances:Hide()
 
     -- create tab buttons
@@ -406,7 +396,7 @@ function init_hist_entry(y_pos, num) -- creates 1 game entry "preset" at given y
     game.gold:SetScale(1)
 
     game.opp = game:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    game.opp:SetPoint("CENTER")
+    game.opp:SetPoint("LEFT", 5, 0)
     game.opp:SetScale(1)
 
     game:SetScript("OnClick", function() display_game(DRU.GetGameByID(game.id)) end) -- when u click a game in the list
@@ -510,13 +500,13 @@ function display_game(game)
 end
 
 function set_tab(id)
-  for i, b in ipairs(tabs) do
-    b.active = (i == id)
-    if b.active then b.bg:SetColorTexture(0.22,0.22,0.25,1) else b.bg:SetColorTexture(0.08,0.08,0.09,0.95) end
-    if tab_frames[i] then
-      if i == id then tab_frames[i]:Show() else tab_frames[i]:Hide() end
+    for i, b in ipairs(tabs) do
+        b.active = (i == id)
+        if b.active then b.bg:SetColorTexture(0.22,0.22,0.25,1) else b.bg:SetColorTexture(0.08,0.08,0.09,0.95) end
+        if tab_frames[i] then
+            if i == id then tab_frames[i]:Show() else tab_frames[i]:Hide() end
+        end
     end
-  end
 end
 
 function DRU.UpdateStats()
@@ -525,10 +515,17 @@ function DRU.UpdateStats()
     tab_frames[2].text:SetText(string.format(stats_text, total, win_rate, wins, losses, goldify(total_gold), goldify(most_won), goldify(most_lost), win_streak, loss_streak, two_streak, worst_roll))
 end
 
--- Create draggable parent frame for button
+function DRU.InitRollBox()
+    DRU.roll_box = CreateFrame("Button", "DeathRollFrame", UIParent, "")
+    DRU.roll_box:SetSize(300, 300)
+    DRU.roll_box:SetPoint("CENTER")
+end
+
+
+
 function DRU.InitButton()
-    DRU.button_frame = CreateFrame("Frame", "DeathrollFrame", UIParent, "BackdropTemplate")
-    DRU.button_frame:SetFrameStrata("HIGH")
+    DRU.button_frame = CreateFrame("Button", "DeathRollFrame", UIParent, "BackdropTemplate")
+    DRU.button_frame:SetFrameStrata("MEDIUM")
     DRU.button_frame:SetSize(100, 40)
     DRU.button_frame:SetPoint("CENTER", -100, -50)
     DRU.button_frame:SetBackdrop({
@@ -583,6 +580,7 @@ end
 function DRU.ToggleButton(value)
     if not is_button_initialized then
         DRU.InitButton()
+        DRU.ToggleTextbox(ST.textbox)
         DRU.ButtonUpdate(GS.in_game, GS.my_turn)
     end
 
