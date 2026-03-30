@@ -1,3 +1,5 @@
+-- (obviously) this file handles all of the GUI
+
 DeathRollUnlocked = DeathRollUnlocked or {}
 local DRU = DeathRollUnlocked
 ---@diagnostic disable: undefined-global
@@ -466,8 +468,8 @@ function display_game(game)
 
     local opp = game.info.opp or "None"
     local result = game.info.result or "None"
-    local my_wager = string.concat(tostring(game.info.my_wager), g)
-    local opp_wager = string.concat(tostring(game.info.opp_wager), g)
+    local my_wager = (tostring(game.info.my_wager)..g)
+    local opp_wager = (tostring(game.info.opp_wager)..g)
     local rolls = game.rolls
 
     GD.info.text_1:SetText(string.format(game_info_text, opp, result, my_wager, opp, opp_wager))
@@ -628,7 +630,7 @@ function DRU.ConfirmWipe(type)
 end
 
 function goldify(gold)
-    local new_gold = string.concat(gold, g)
+    local new_gold = (gold..g)
     return new_gold
 end
 

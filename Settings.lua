@@ -1,3 +1,5 @@
+-- all of the settings are stored here
+
 DeathRollUnlocked = DeathRollUnlocked or {}
 local DRU = DeathRollUnlocked
 

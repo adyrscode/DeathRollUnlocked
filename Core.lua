@@ -1,4 +1,4 @@
--- this file manages the core gameplay loop of deathrolling.
+-- this file manages the core gameplay loop of deathrolling
 
 -- prefix for our own addon channel
 local prefix = "deathroll_data"

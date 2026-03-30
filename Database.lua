@@ -1,4 +1,4 @@
--- this file manages all of the database storing, parsing and pulling.
+-- this file manages all of the database storing, parsing and pulling
 -- some side effects like UI updates are also called here, because they have to happen after the DB has been updated.
 
 DeathRollUnlocked = DeathRollUnlocked or {}
@@ -223,9 +223,9 @@ function DRU.GetMatchHistoryPage(page_num, page_len, opp_search)
         local skip = false
         
         if result == "Win" then
-            gold_str = string.concat("+", DRUDB.games[i].info.opp_wager, g)
+            gold_str = ("+"..DRUDB.games[i].info.opp_wager..g)
         elseif result == "Loss" then
-            gold_str = string.concat(tostring(-DRUDB.games[i].info.my_wager), g)
+            gold_str = (tostring(-DRUDB.games[i].info.my_wager)..g)
         elseif result == nil then -- the game is not yet finished and we shouldn't display it
             skip = true
         end
