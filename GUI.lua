@@ -122,8 +122,8 @@ function DRU.InitMenu()
 
     -- close button
     local close = CreateFrame("Button", nil, DRU.menu, "UIPanelCloseButton")
-    close:SetPoint("TOPRIGHT", DRU.menu, "TOPRIGHT", 0, 0)
-    close:SetScript("OnClick", function() DRU.menu:Hide() end)
+    close:SetPoint("TOPRIGHT", DRU.menu, "TOPRIGHT", 4, 4) -- 9 pixels of difference with retail bc close button is different :)
+    close:SetScript("OnClick", function() DRU.menu:Hide() ST.dr_menu = false end)
 
     -- settings button
     local settings = CreateFrame("Button", nil, DRU.menu)
@@ -466,8 +466,8 @@ function display_game(game)
 
     local opp = game.info.opp or "None"
     local result = game.info.result or "None"
-    local my_wager = string.concat(tostring(game.info.my_wager), g)
-    local opp_wager = string.concat(tostring(game.info.opp_wager), g)
+    local my_wager = (tostring(game.info.my_wager)..g)
+    local opp_wager = (tostring(game.info.opp_wager)..g)
     local rolls = game.rolls
 
     GD.info.text_1:SetText(string.format(game_info_text, opp, result, my_wager, opp, opp_wager))
@@ -628,7 +628,7 @@ function DRU.ConfirmWipe(type)
 end
 
 function goldify(gold)
-    local new_gold = string.concat(gold, g)
+    local new_gold = (gold..g)
     return new_gold
 end
 
