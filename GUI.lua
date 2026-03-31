@@ -19,8 +19,10 @@ local tab_frames = {}
 -- constants
 local PAGE_LEN = 8 -- amount of games displayed per page in match history
 local TOP_GAME_POS = -28 -- the y_pos of the top game of the page
-local COLORS = {WIN = {normal = {0.1, 0.6, 0.1, 0.60}, hover = {0.2, 0.85, 0.2, 0.75}}, 
-                LOSS = {normal = {0.6, 0.1, 0.1, 0.60}, hover = {0.85, 0.2, 0.2, 0.75}}}
+local COLORS = {
+WIN = {normal = {0.1, 0.6, 0.1, 0.60}, hover = {0.2, 0.85, 0.2, 0.75}}, 
+LOSS = {normal = {0.6, 0.1, 0.1, 0.60}, hover = {0.85, 0.2, 0.2, 0.75}}
+}
 
 -- functions
 local make_page
@@ -123,7 +125,7 @@ function DRU.InitMenu()
     -- close button
     local close = CreateFrame("Button", nil, DRU.menu, "UIPanelCloseButton")
     close:SetPoint("TOPRIGHT", DRU.menu, "TOPRIGHT", 0, 0)
-    close:SetScript("OnClick", function() DRU.menu:Hide() end)
+    close:SetScript("OnClick", function() DRU.menu:Hide() ST.dr_menu = false end)
 
     -- settings button
     local settings = CreateFrame("Button", nil, DRU.menu)
