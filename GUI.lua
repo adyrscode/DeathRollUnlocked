@@ -1,5 +1,3 @@
--- (obviously) this file handles all of the GUI
-
 DeathRollUnlocked = DeathRollUnlocked or {}
 local DRU = DeathRollUnlocked
 ---@diagnostic disable: undefined-global

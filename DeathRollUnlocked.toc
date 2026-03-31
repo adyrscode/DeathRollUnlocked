@@ -1,6 +1,6 @@
 ## Interface: 120001
 ## Title: DeathRoll Unlocked
-## Version: 0.8
+## Version: 1.0.1
 ## Notes: Deathrolling made easy, quick and safe. Keep track of your past games, statistics and finances.
 ## Author: Adyr
 ## DefaultState: enabled
