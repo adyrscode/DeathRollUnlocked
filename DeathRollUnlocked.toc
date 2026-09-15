@@ -1,4 +1,4 @@
-## Interface: 20505
+## Interface: 20506
 ## Title: DeathRoll Unlocked
 ## Version: 1.0.0
 ## Notes: Deathrolling made easy, quick and safe. Keep track of your past games, statistics and finances.
