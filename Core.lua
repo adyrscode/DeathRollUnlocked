@@ -452,6 +452,16 @@ function DRU.ButtonClick()
 end
 
 -- COMMANDS
+SLASH_DEATHROLLTRY1 = "/drtry"
+SlashCmdList["DEATHROLLTRY"] = function()
+    if not DRU.DEBUG then
+        DRU.print("That's a dev command buddy :)")
+        return
+    end
+
+    print(UnitName("target"))
+end
+
 SLASH_DEATHROLLCHAT1 = "/drchat"
 SlashCmdList["DEATHROLLCHAT"] = function() -- msg is whatever player types after cmd
     if not DRU.DEBUG then return end

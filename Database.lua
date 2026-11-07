@@ -398,17 +398,6 @@ function DRU.IsInGame() -- no games, no rolls or last_roll == 1 means we are not
 end
 
 -- COMMANDS
-SLASH_DEATHROLLTRY1 = "/drtry"
-SlashCmdList["DEATHROLLTRY"] = function()
-    if not DRU.DEBUG then
-        DRU.print("That's a dev command buddy :)")
-        return
-    end
-
-    local string = "5"
-    print(tonumber(string) or 6)
-end
-
 SLASH_DEATHROLLGAMES1 = "/drgame"
 SLASH_DEATHROLLGAMES2 = "/drgames"
 SlashCmdList["DEATHROLLGAMES"] = function()
