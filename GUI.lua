@@ -537,12 +537,12 @@ function DRU.InitButton()
         insets = { left = 2, right = 2, top = 2, bottom = 2 }
     })
     local function OnDragStart(self, button)
-        if button == "MiddleButton" then
+        if button == "MiddleButton" or button == "RightButton" then
             DRU.button_frame:StartMoving()
         end
     end
     local function OnDragStop(self, button)
-        if button == "MiddleButton" then
+        if button == "MiddleButton" or button == "RightButton" then
             DRU.button_frame:StopMovingOrSizing()
         end
     end
