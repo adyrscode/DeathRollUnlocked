@@ -4,7 +4,7 @@
 local prefix = "deathroll_data"
 DeathRollUnlocked = DeathRollUnlocked or {}
 local DRU = DeathRollUnlocked -- anytime a function has DRU. in front of it, that means it has to be called from another file at some point
-DRU.DEBUG = true -- remember to always set this to false and disable the testing.lua in toc before pushing
+DRU.DEBUG = false -- remember to always set this to false and disable the testing.lua in toc before pushing
 
 -- game version?
 local function identify_game_version()
