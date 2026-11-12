@@ -19,8 +19,10 @@ local tab_frames = {}
 -- constants
 local PAGE_LEN = 8 -- amount of games displayed per page in match history
 local TOP_GAME_POS = -28 -- the y_pos of the top game of the page
-local COLORS = {WIN = {normal = {0.1, 0.6, 0.1, 0.60}, hover = {0.2, 0.85, 0.2, 0.75}}, 
-                LOSS = {normal = {0.6, 0.1, 0.1, 0.60}, hover = {0.85, 0.2, 0.2, 0.75}}}
+local COLORS = {
+WIN = {normal = {0.1, 0.6, 0.1, 0.60}, hover = {0.2, 0.85, 0.2, 0.75}}, 
+LOSS = {normal = {0.6, 0.1, 0.1, 0.60}, hover = {0.85, 0.2, 0.2, 0.75}}
+}
 
 -- functions
 local make_page

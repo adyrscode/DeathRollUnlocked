@@ -48,6 +48,11 @@ local roll_check
 local wager_check
 local pre_game
 
+-- constants
+DRU.GAME_REQ, DRU.DEL_REQ, DRU.ACCEPT_REQ, DRU.FORCE_DEL_REQ, DRU.CANCEL_GAME = 1, 2, 3, 4, 5 -- msg_type for the channel_listener
+
+local f -- for HistoryChange
+
 local addon_loader = CreateFrame("Frame")
 addon_loader:RegisterEvent("ADDON_LOADED")
 addon_loader:SetScript("OnEvent", function(self, event, addon_name)
@@ -67,7 +72,7 @@ channel_listener:RegisterEvent("CHAT_MSG_ADDON")
 channel_listener:SetScript("OnEvent", function(self, event, prefix, message, channel, temp_sender)
     if prefix == "deathroll_data" then -- if the addonmessage is from deathroll_data
         local msg_type, opp_roll_str, opp_max_roll_str, opp_wager_str = strsplit(":", message)
-        local sender = temp_sender:match("^[^-]+") or temp_sender -- take realm name out
+        local sender = temp_sender:match("^[^-]+") or temp_sender -- take realm name out (not sure if nessecary)
         
         local opp_max_roll = tonumber(opp_max_roll_str)
         local opp_roll = tonumber(opp_roll_str)

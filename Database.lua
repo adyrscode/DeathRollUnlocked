@@ -242,7 +242,7 @@ function DRU.GetMatchHistoryPage(page_num, page_len, opp_search)
 end
 
 function DRU.GetGameByID(id) -- a safe function that returns a game based on id.
-    for i, game in ipairs(DRUDB.games) do
+    for _, game in ipairs(DRUDB.games) do
         if game.info.id == id then
             return game
         end
