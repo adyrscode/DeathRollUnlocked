@@ -12,7 +12,11 @@ DRU.random_rolls = {}
 local my_request_pending = false
 
 -- shorthands
-DRU.me = UnitName("player")
+local function create_me() -- names are different in forever
+    local first_name, last_name = UnitName("player")
+    DRU.me = string.format("%s %s", first_name, last_name)
+end
+create_me()
 local GS = DRU.gamestate
 local ST
 local g = "|TInterface\\MoneyFrame\\UI-GoldIcon:0|t"
@@ -292,7 +296,11 @@ end
 function target_check() -- checks if player targeted, if they're in our group, and if they're connected.
     local err_msg = ""
     local targeted = UnitIsPlayer("target")
-    local target = UnitName("target")
+    local first_name, last_name = UnitName("target")
+    local target = ""
+    if first_name ~= nil then
+        target = string.format("%s %s", first_name, last_name)
+    end
     local result = true
     local group = nil
 
@@ -306,7 +314,8 @@ function target_check() -- checks if player targeted, if they're in our group, a
         -- my amazing generic for loop for both raids and parties mmmmm yeah
         local found = false
         for i = 1, total_members do
-            local name = UnitName(group..i) -- UnitName("party1") is the first member in your party
+            local first_name, last_name = UnitName(group..i) -- UnitName("party1") is the first member in your party
+            local name = string.format("%s %s", first_name, last_name)
             if name == target then
                 found = true
                 break
@@ -318,7 +327,7 @@ function target_check() -- checks if player targeted, if they're in our group, a
         end
 
         if found then -- only check this if target is in our group; otherwise the client cannot know if the target is connected or not
-            if UnitIsConnected(target) == false then
+            if UnitIsConnected("target") == false then
                 result = false
                 err_msg = string.format("%s is not online right now.", target)
             end
@@ -459,7 +468,11 @@ SlashCmdList["DEATHROLLTRY"] = function()
         return
     end
 
+    print(UnitIsPlayer("target"))
+    print(UnitIsConnected("target"))
     print(UnitName("target"))
+    print(UnitName("player"))
+    print(DRU.me)
 end
 
 SLASH_DEATHROLLCHAT1 = "/drchat"

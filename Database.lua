@@ -16,6 +16,7 @@ function DRU.InitDB()
     DRUDB.games = DRUDB.games or {} -- match history
     DRUDB.requests = DRUDB.requests or {} -- pending requests
     DRUDB.pending_additions = DRUDB.pending_additions or {} -- games to be added after we are done with our current game (someone else tried to roll us mid-game and they lost immediately)
+    DRUDB.gui_data = DRUDB.gui_data or {button_pos = {"CENTER", 500, -180}, menu_pos = {"CENTER", 500, 0}}
     ST = DRUDB.settings
     GS = DRU.gamestate
 end
