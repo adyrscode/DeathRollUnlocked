@@ -4,6 +4,7 @@
 # But not these files
 !.gitignore
 !.pkgmeta
+!logo.png
 !Core.lua
 !Settings.lua
 !GUI.lua

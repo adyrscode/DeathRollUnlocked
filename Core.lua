@@ -4,7 +4,17 @@
 local prefix = "deathroll_data"
 DeathRollUnlocked = DeathRollUnlocked or {}
 local DRU = DeathRollUnlocked -- anytime a function has DRU. in front of it, that means it has to be called from another file at some point
-DRU.DEBUG = false -- remember to always set this to false and disable the testing.lua in toc before pushing
+DRU.DEBUG = true -- remember to always set this to false and disable the testing.lua in toc before pushing
+
+-- game version?
+local function identify_game_version()
+    local id = WOW_PROJECT_ID
+---@diagnostic disable-next-line: undefined-global
+    DRU.is_forever = (id == WOW_PROJECT_CAMELOT)
+    DRU.is_retail = (id == WOW_PROJECT_MAINLINE)
+    DRU.is_tbc = (id == WOW_PROJECT_BURNING_CRUSADE_CLASSIC)
+end
+identify_game_version()
 
 -- game states
 DRU.gamestate = {in_game = false, curr_game = nil, my_turn = false, curr_opp = nil, my_wager = 0, opp_wager = 0, last_roller = nil, last_roll = 0}
@@ -12,7 +22,15 @@ DRU.random_rolls = {}
 local my_request_pending = false
 
 -- shorthands
-DRU.me = UnitName("player")
+local function init_player_name()
+    if DRU.is_forever then
+        local first_name, last_name = UnitName("player")
+        DRU.me = string.format("%s %s", first_name, last_name)
+    else
+        DRU.me = UnitName("player")
+    end
+end
+init_player_name()
 local GS = DRU.gamestate
 local ST
 local g = "|TInterface\\MoneyFrame\\UI-GoldIcon:0|t"
@@ -297,35 +315,57 @@ end
 function target_check() -- checks if player targeted, if they're in our group, and if they're connected.
     local err_msg = ""
     local targeted = UnitIsPlayer("target")
-    local target = UnitName("target")
+    local target = ""
     local result = true
     local group = nil
 
-    if targeted and (target ~= DRU.me) then
-        local total_members = GetNumGroupMembers()
-
-        if IsInGroup() then group = "party"
-        elseif IsInRaid() then group = "raid"
-        end
-
-        -- my amazing generic for loop for both raids and parties mmmmm yeah
-        local found = false
-        for i = 1, total_members do
-            local name = UnitName(group..i) -- UnitName("party1") is the first member in your party
-            if name == target then
-                found = true
-                break
+    if targeted then
+        if DRU.is_forever then
+            local first_name, last_name = UnitName("target")
+            if first_name ~= nil then
+                target = string.format("%s %s", first_name, last_name)
             end
-        end
-        if found == false then 
-            result = false
-            err_msg = string.format("%s is not in your party! They won't be able to see your roll. Get in a party together before deathrolling.", target)
+        else
+            target = UnitName("target")
         end
 
-        if found then -- only check this if target is in our group; otherwise the client cannot know if the target is connected or not
-            if UnitIsConnected(target) == false then
+        if target == DRU.me then
+            result = false
+            err_msg = "Please target a player to start a deathroll. Type /drgames to see who wants to roll you."
+        else -- we've targeted a player and it is not ourselves; see if they are in our party or raid
+            local total_members = GetNumGroupMembers()
+    
+            if IsInGroup() then group = "party"
+            elseif IsInRaid() then group = "raid"
+            end
+    
+            -- my amazing generic for loop for both raids and parties mmmmm yeah
+            local found = false
+            for i = 1, total_members do
+                local name = ""
+                if DRU.is_forever then
+                    local first_name, last_name = UnitName(group..i) -- UnitName("party1") is the first member in your party
+                    name = string.format("%s %s", first_name, last_name)
+                else
+                    name = UnitName(group..i)
+                end
+    
+                if name == target then
+                    found = true
+                    break
+                end
+            end
+
+            if found == false then 
                 result = false
-                err_msg = string.format("%s is not online right now.", target)
+                err_msg = string.format("%s is not in your party! They won't be able to see your roll. Get in a party together before deathrolling.", target)
+            end
+    
+            if found then -- only check this if target is in our group; otherwise the client cannot know if the target is connected or not
+                if UnitIsConnected(target) == false then
+                    result = false
+                    err_msg = string.format("%s is not online right now.", target)
+                end
             end
         end
 
@@ -457,6 +497,14 @@ function DRU.ButtonClick()
 end
 
 -- COMMANDS
+SLASH_DEATHROLLTRY1 = "/drtry"
+SlashCmdList["DEATHROLLTRY"] = function()
+    if not DRU.DEBUG then
+        DRU.print("That's a dev command buddy :)")
+        return
+    end
+end
+
 SLASH_DEATHROLLCHAT1 = "/drchat"
 SlashCmdList["DEATHROLLCHAT"] = function() -- msg is whatever player types after cmd
     if not DRU.DEBUG then return end

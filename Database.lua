@@ -16,6 +16,7 @@ function DRU.InitDB()
     DRUDB.games = DRUDB.games or {} -- match history
     DRUDB.requests = DRUDB.requests or {} -- pending requests
     DRUDB.pending_additions = DRUDB.pending_additions or {} -- games to be added after we are done with our current game (someone else tried to roll us mid-game and they lost immediately)
+    DRUDB.gui_data = DRUDB.gui_data or {button_pos = {"CENTER", 500, -180}, menu_pos = {"CENTER", 500, 0}}
     ST = DRUDB.settings
     GS = DRU.gamestate
 end
@@ -223,9 +224,9 @@ function DRU.GetMatchHistoryPage(page_num, page_len, opp_search)
         local skip = false
         
         if result == "Win" then
-            gold_str = ("+"..DRUDB.games[i].info.opp_wager..g)
+            gold_str = ("+".. DRUDB.games[i].info.opp_wager.. g)
         elseif result == "Loss" then
-            gold_str = (tostring(-DRUDB.games[i].info.my_wager)..g)
+            gold_str = (tostring(-DRUDB.games[i].info.my_wager).. g)
         elseif result == nil then -- the game is not yet finished and we shouldn't display it
             skip = true
         end
@@ -398,17 +399,6 @@ function DRU.IsInGame() -- no games, no rolls or last_roll == 1 means we are not
 end
 
 -- COMMANDS
-SLASH_DEATHROLLTRY1 = "/drtry"
-SlashCmdList["DEATHROLLTRY"] = function()
-    if not DRU.DEBUG then
-        DRU.print("That's a dev command buddy :)")
-        return
-    end
-
-    local string = "5"
-    print(tonumber(string) or 6)
-end
-
 SLASH_DEATHROLLGAMES1 = "/drgame"
 SLASH_DEATHROLLGAMES2 = "/drgames"
 SlashCmdList["DEATHROLLGAMES"] = function()

@@ -100,12 +100,17 @@ function DRU.InitMenu()
     DRU.menu = CreateFrame("Frame", "DeathRollFrame", UIParent)
     DRU.menu:SetFrameStrata("LOW")
     DRU.menu:SetSize(290, 300)
-    DRU.menu:SetPoint("CENTER", 200, 0)
+    DRU.menu:SetPoint(unpack(DRUDB.gui_data.menu_pos))
     DRU.menu:EnableMouse(true)
     DRU.menu:SetMovable(true)
     DRU.menu:RegisterForDrag("LeftButton")
     DRU.menu:SetScript("OnDragStart", function(self) self:StartMoving() end)
-    DRU.menu:SetScript("OnDragStop", function(self) self:StopMovingOrSizing() end)
+    DRU.menu:SetScript("OnDragStop",
+    function(self)
+        self:StopMovingOrSizing()
+        local _, _, point, x, y = DRU.menu:GetPoint()
+        DRUDB.gui_data.menu_pos = {point, x, y}
+    end)
 
     -- background
     DRU.menu.bg = DRU.menu:CreateTexture(nil, "BACKGROUND")
@@ -529,7 +534,7 @@ function DRU.InitButton()
     DRU.button_frame = CreateFrame("Button", "DeathRollFrame", UIParent, "BackdropTemplate")
     DRU.button_frame:SetFrameStrata("MEDIUM")
     DRU.button_frame:SetSize(100, 40)
-    DRU.button_frame:SetPoint("CENTER", -100, -50)
+    DRU.button_frame:SetPoint(unpack(DRUDB.gui_data.button_pos))
     DRU.button_frame:SetBackdrop({
         bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
         edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
@@ -544,6 +549,8 @@ function DRU.InitButton()
     local function OnDragStop(self, button)
         if button == "MiddleButton" or button == "RightButton" then
             DRU.button_frame:StopMovingOrSizing()
+            local _, _, point, x, y = DRU.button_frame:GetPoint()
+            DRUDB.gui_data.button_pos = {point, x, y}
         end
     end
     DRU.button_frame:SetBackdropColor(0, 0, 0, 0)
