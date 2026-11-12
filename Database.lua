@@ -1,5 +1,5 @@
 -- this file manages all of the database storing, parsing and pulling
--- some side effects like UI updates are also called here, because they have to happen after the DB has been updated.
+-- some side effects like UI updates are also called here, because they have to happen after the DB has been updated
 
 DeathRollUnlocked = DeathRollUnlocked or {}
 local DRU = DeathRollUnlocked
